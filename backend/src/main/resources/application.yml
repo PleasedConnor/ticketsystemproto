@@ -1,0 +1,92 @@
+spring:
+  application:
+    name: prototype-backend
+  
+  profiles:
+    active: dev
+  
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+  
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    defer-datasource-initialization: true
+  
+  sql:
+    init:
+      mode: never
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  security:
+    user:
+      name: admin
+      password: admin
+      roles: ADMIN
+
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.prototype: DEBUG
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# Google Cloud Configuration
+google:
+  cloud:
+    project-id: ${GOOGLE_CLOUD_PROJECT_ID:demo-project}
+    # For development, you can set GOOGLE_APPLICATION_CREDENTIALS environment variable
+    # or use gcloud auth application-default login
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/prototype}
+    username: ${DATABASE_USERNAME:prototype}
+    password: ${DATABASE_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    com.prototype: INFO
+    org.springframework.security: WARN
