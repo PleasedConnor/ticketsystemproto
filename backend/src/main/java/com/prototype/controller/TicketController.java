@@ -3,6 +3,7 @@ package com.prototype.controller;
 import com.prototype.entity.Ticket;
 import com.prototype.entity.TicketMessage;
 import com.prototype.service.TicketService;
+import com.prototype.service.TicketService.ChatMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -60,4 +61,45 @@ public class TicketController {
         }
         return ResponseEntity.notFound().build();
     }
+    
+    /**
+     * Create a ticket from chatbot conversation
+     */
+    @PostMapping("/from-chat")
+    public ResponseEntity<Ticket> createTicketFromChat(@RequestBody ChatToTicketRequest request) {
+        try {
+            System.out.println("Creating ticket from chat - Subject: " + request.getSubject());
+            System.out.println("Messages count: " + (request.getMessages() != null ? request.getMessages().size() : 0));
+            
+            Ticket ticket = ticketService.createTicketFromChat(
+                request.getSubject(),
+                request.getDescription(),
+                request.getMessages()
+            );
+            
+            System.out.println("Ticket created successfully with ID: " + ticket.getId());
+            return ResponseEntity.ok(ticket);
+        } catch (Exception e) {
+            System.err.println("Error creating ticket from chat: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    
+    // Request DTO
+    public static class ChatToTicketRequest {
+        private String subject;
+        private String description;
+        private List<ChatMessage> messages;
+        
+        public String getSubject() { return subject; }
+        public void setSubject(String subject) { this.subject = subject; }
+        
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        
+        public List<ChatMessage> getMessages() { return messages; }
+        public void setMessages(List<ChatMessage> messages) { this.messages = messages; }
+    }
+    
 }

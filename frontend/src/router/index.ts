@@ -23,6 +23,21 @@ const router = createRouter({
       path: '/analytics',
       name: 'analytics',
       component: () => import('../views/AnalyticsView.vue')
+    },
+    {
+      path: '/simulation',
+      name: 'simulation',
+      component: () => import('../views/SimulationView.vue')
+    },
+    {
+      path: '/ai-configuration',
+      name: 'ai-configuration',
+      component: () => import('../views/AIConfigurationView.vue')
+    },
+    {
+      path: '/chatbot',
+      name: 'chatbot',
+      component: () => import('../views/ChatbotView.vue')
     }
   ]
 })

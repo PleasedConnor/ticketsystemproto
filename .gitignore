@@ -63,3 +63,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Database files (H2 file-based database)
+backend/data/
+*.mv.db
+*.trace.db

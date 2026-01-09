@@ -49,31 +49,13 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // Create data if nothing exists, or if messages are missing
-        if (userRepository.count() == 0) {
+        // Only initialize seed data if the database is completely empty
+        // Never delete user-created data (tickets, AI configurations, etc.)
+        if (userRepository.count() == 0 && ticketRepository.count() == 0) {
+            System.out.println("Database is empty. Initializing seed data...");
             initializeData();
-        } else if (messageRepository.count() < 50 || sentimentRepository.count() == 0) {
-            // If we have users and tickets but not enough messages or missing analytics data, recreate everything
-            System.out.println("Detected incomplete data. Clearing and reinitializing...");
-            systemMetricsRepository.deleteAll();
-            sentimentRepository.deleteAll();
-            resolutionRepository.deleteAll();
-            activityRepository.deleteAll();
-            messageRepository.deleteAll();
-            ticketRepository.deleteAll();
-            userRepository.deleteAll();
-            
-            // Reset H2 auto-increment values to start from 1 again
-            try {
-                // H2 uses IDENTITY columns (auto-increment), not sequences
-                entityManager.createNativeQuery("ALTER TABLE tickets ALTER COLUMN id RESTART WITH 1").executeUpdate();
-                entityManager.createNativeQuery("ALTER TABLE ticket_messages ALTER COLUMN id RESTART WITH 1").executeUpdate();
-                System.out.println("Successfully reset H2 auto-increment values");
-            } catch (Exception e) {
-                System.out.println("Could not reset auto-increment values: " + e.getMessage());
-            }
-            
-            initializeData();
+        } else {
+            System.out.println("Database already contains data. Skipping seed data initialization to preserve user-created content.");
         }
     }
 
@@ -93,16 +75,16 @@ public class DataInitializer implements CommandLineRunner {
         User robert = createUser("8888999900", "Robert Davis", "robert.davis@client.com", "Denver, CO", "Samsung Galaxy", "08888999900");
 
         // Create tickets - IDs will be automatically assigned as 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
-        Ticket ticket1 = createTicket("My issue is not listed here", "Query: My issue is not listed here", TicketStatus.OPEN, TicketPriority.MEDIUM, connor);
-        Ticket ticket2 = createTicket("bet is void", "I need assistance with a transaction that is not listed here.", TicketStatus.OPEN, TicketPriority.HIGH, connor);
-        Ticket ticket3 = createTicket("Login Issues", "Cannot access my account after password reset", TicketStatus.IN_PROGRESS, TicketPriority.HIGH, sarah);
-        Ticket ticket4 = createTicket("Payment Failed", "Credit card payment was declined but amount was charged", TicketStatus.OPEN, TicketPriority.URGENT, michael);
-        Ticket ticket5 = createTicket("App Crashes", "Mobile app keeps crashing when I try to upload documents", TicketStatus.PENDING, TicketPriority.MEDIUM, emma);
-        Ticket ticket6 = createTicket("Account Locked", "My account has been locked after multiple login attempts", TicketStatus.RESOLVED, TicketPriority.HIGH, david);
-        Ticket ticket7 = createTicket("Missing Transaction", "A transaction from last week is not showing in my history", TicketStatus.OPEN, TicketPriority.MEDIUM, lisa);
-        Ticket ticket8 = createTicket("Slow Performance", "Website is loading very slowly on all pages", TicketStatus.IN_PROGRESS, TicketPriority.LOW, james);
-        Ticket ticket9 = createTicket("Email Notifications", "Not receiving email notifications for important updates", TicketStatus.OPEN, TicketPriority.LOW, maria);
-        Ticket ticket10 = createTicket("Data Export", "Need to export my data but the feature is not working", TicketStatus.PENDING, TicketPriority.MEDIUM, robert);
+        Ticket ticket1 = createTicket("My issue is not listed here", "Query: My issue is not listed here", TicketStatus.OPEN, TicketPriority.MEDIUM, TicketCategory.GENERAL, connor);
+        Ticket ticket2 = createTicket("bet is void", "I need assistance with a transaction that is not listed here.", TicketStatus.OPEN, TicketPriority.HIGH, TicketCategory.WITHDRAWALS, connor);
+        Ticket ticket3 = createTicket("Login Issues", "Cannot access my account after password reset", TicketStatus.IN_PROGRESS, TicketPriority.HIGH, TicketCategory.ACCOUNT, sarah);
+        Ticket ticket4 = createTicket("Payment Failed", "Credit card payment was declined but amount was charged", TicketStatus.OPEN, TicketPriority.URGENT, TicketCategory.PAYMENTS, michael);
+        Ticket ticket5 = createTicket("App Crashes", "Mobile app keeps crashing when I try to upload documents", TicketStatus.PENDING, TicketPriority.MEDIUM, TicketCategory.TECHNICAL, emma);
+        Ticket ticket6 = createTicket("Account Locked", "My account has been locked after multiple login attempts", TicketStatus.RESOLVED, TicketPriority.HIGH, TicketCategory.ACCOUNT, david);
+        Ticket ticket7 = createTicket("Missing Transaction", "A transaction from last week is not showing in my history", TicketStatus.OPEN, TicketPriority.MEDIUM, TicketCategory.DEPOSITS, lisa);
+        Ticket ticket8 = createTicket("Slow Performance", "Website is loading very slowly on all pages", TicketStatus.IN_PROGRESS, TicketPriority.LOW, TicketCategory.TECHNICAL, james);
+        Ticket ticket9 = createTicket("Email Notifications", "Not receiving email notifications for important updates", TicketStatus.OPEN, TicketPriority.LOW, TicketCategory.GENERAL, maria);
+        Ticket ticket10 = createTicket("Data Export", "Need to export my data but the feature is not working", TicketStatus.PENDING, TicketPriority.MEDIUM, TicketCategory.TECHNICAL, robert);
 
         // Create messages for ticket 1 - Connor's issue
         createMessage("Hello stranger, welcome! I'm here to assist you with any inquiries about something important. How may I help you today?", SenderType.AGENT, "Support Agent", ticket1);
@@ -370,13 +352,14 @@ public class DataInitializer implements CommandLineRunner {
         return userRepository.save(user);
     }
 
-    private Ticket createTicket(String subject, String description, TicketStatus status, TicketPriority priority, User user) {
+    private Ticket createTicket(String subject, String description, TicketStatus status, TicketPriority priority, TicketCategory category, User user) {
         Ticket ticket = new Ticket();
         ticket.setId(++ticketIdCounter);  // Simple incrementing ID: 1, 2, 3, 4, 5...
         ticket.setSubject(subject);
         ticket.setDescription(description);
         ticket.setStatus(status);
         ticket.setPriority(priority);
+        ticket.setCategory(category);
         ticket.setUser(user);
         return ticketRepository.save(ticket);
     }

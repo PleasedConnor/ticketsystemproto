@@ -10,6 +10,7 @@ import com.prototype.entity.Ticket;
 import com.prototype.entity.TicketMessage;
 import com.prototype.repository.TicketRepository;
 import com.prototype.repository.TicketMessageRepository;
+import com.prototype.service.AIConfigurationService;
 
 import java.util.Optional;
 import java.util.Map;
@@ -37,6 +38,9 @@ public class AIService {
     
     @Autowired
     private TicketMessageRepository messageRepository;
+    
+    @Autowired
+    private AIConfigurationService configurationService;
     
     public AIService() {
         this.webClient = WebClient.builder()
@@ -122,10 +126,58 @@ public class AIService {
     }
     
     private String getSentimentLabel(float score) {
-        // Define sentiment boundaries
-        if (score > 0.1) return "POSITIVE";    // Above 0.1 is positive
-        if (score < -0.1) return "NEGATIVE";   // Below -0.1 is negative  
-        return "NEUTRAL";                      // -0.1 to 0.1 is neutral
+        // Define sentiment boundaries - widened neutral range to account for factual problem statements
+        // that aren't actually negative in tone (e.g., "I'm missing money" said politely)
+        if (score > 0.2) return "POSITIVE";    // Above 0.2 is positive
+        if (score < -0.2) return "NEGATIVE";   // Below -0.2 is negative  
+        return "NEUTRAL";                      // -0.2 to 0.2 is neutral
+    }
+    
+    /**
+     * Adjust sentiment score for polite/factual language
+     * If a message mentions problems but uses polite language, reduce the negative bias
+     */
+    private float adjustSentimentForPoliteness(String message, float originalScore) {
+        if (originalScore >= 0) {
+            // Already positive or neutral, no adjustment needed
+            return originalScore;
+        }
+        
+        String lowerMessage = message.toLowerCase();
+        
+        // Polite language indicators
+        boolean hasPoliteLanguage = lowerMessage.contains("please") || 
+                                   lowerMessage.contains("thank") ||
+                                   lowerMessage.contains("appreciate") ||
+                                   lowerMessage.contains("would be great") ||
+                                   lowerMessage.contains("could you") ||
+                                   lowerMessage.contains("would you") ||
+                                   lowerMessage.contains("if possible") ||
+                                   lowerMessage.contains("when you can");
+        
+        // Factual/problem-reporting language (not angry/complaining)
+        boolean isFactualReport = (lowerMessage.contains("missing") || 
+                                  lowerMessage.contains("issue") || 
+                                  lowerMessage.contains("problem") ||
+                                  lowerMessage.contains("not working") ||
+                                  lowerMessage.contains("don't see")) &&
+                                  !lowerMessage.contains("angry") &&
+                                  !lowerMessage.contains("frustrated") &&
+                                  !lowerMessage.contains("terrible") &&
+                                  !lowerMessage.contains("awful") &&
+                                  !lowerMessage.contains("horrible") &&
+                                  !lowerMessage.contains("worst") &&
+                                  !lowerMessage.contains("hate") &&
+                                  !lowerMessage.contains("disgusted");
+        
+        // If message is polite or factual (not angry), reduce negative bias
+        if (hasPoliteLanguage || isFactualReport) {
+            // Move negative scores closer to neutral (reduce by 30-50%)
+            float adjustment = originalScore * 0.4f; // Reduce negative impact by 60%
+            return Math.max(originalScore, adjustment);
+        }
+        
+        return originalScore;
     }
     
     /**
@@ -156,11 +208,16 @@ public class AIService {
                 TicketMessage message = customerMessages.get(i);
                 SentimentAnalysisResult messageSentiment = analyzeSentiment(message.getMessage());
                 
+                // Adjust sentiment score for polite/factual language
+                // If message mentions problems but uses polite language, reduce negative bias
+                float adjustedScore = adjustSentimentForPoliteness(message.getMessage(), messageSentiment.getScore());
+                
                 // Weight calculation: more recent messages get higher weight
                 // Latest message gets weight 1.0, previous gets 0.8, then 0.6, etc.
-                double weight = Math.max(0.2, 1.0 - (customerMessages.size() - 1 - i) * 0.2);
+                // Reduced weight decay to be less aggressive (0.15 instead of 0.2)
+                double weight = Math.max(0.3, 1.0 - (customerMessages.size() - 1 - i) * 0.15);
                 
-                totalWeightedSentiment += messageSentiment.getScore() * weight;
+                totalWeightedSentiment += adjustedScore * weight;
                 totalWeight += weight;
             }
             
@@ -325,6 +382,263 @@ public class AIService {
             // Fallback response
             return "I'm here to help! Could you tell me more about what you need assistance with?";
         }
+    }
+    
+    /**
+     * Generate AI agent response for chatbot - acts as a customer service agent
+     */
+    public String generateAgentResponseForChatbot(String customerMessage, String conversationHistory) {
+        try {
+            // Get AI configurations
+            // Get AI configurations and build context (no ticket context for chatbot)
+            String configurationContext = "";
+            try {
+                configurationContext = configurationService.getAllActiveConfigurationsAsPrompt();
+            } catch (Exception e) {
+                System.err.println("Failed to load AI configurations: " + e.getMessage());
+            }
+            
+            // Create the base prompt for a customer service agent
+            String baseSystemPrompt = "You are a professional customer service agent responding to a customer inquiry. " +
+                "Your goal is to provide helpful, accurate, and empathetic support. " +
+                "Be professional, clear, and solution-oriented. " +
+                "Acknowledge the customer's concern, provide relevant information, and offer next steps when appropriate. " +
+                "Keep responses concise but complete - typically 2-4 sentences. " +
+                "Use a friendly but professional tone. " +
+                "Don't put your response in quotes - just respond directly as the agent.";
+            
+            StringBuilder fullPrompt = new StringBuilder();
+            
+            // Add configuration context if available
+            if (configurationContext != null && !configurationContext.trim().isEmpty()) {
+                fullPrompt.append("=== AI CONFIGURATION GUIDELINES ===\n");
+                fullPrompt.append("The following are guidelines to inform your responses. Use them as helpful context ");
+                fullPrompt.append("to guide your tone, approach, and decision-making, but respond naturally and appropriately to each situation:\n\n");
+                fullPrompt.append(configurationContext).append("\n\n");
+                fullPrompt.append("=== END CONFIGURATION GUIDELINES ===\n\n");
+            }
+            
+            fullPrompt.append("=== BASE SYSTEM PROMPT ===\n");
+            fullPrompt.append(baseSystemPrompt).append("\n\n");
+            
+            if (conversationHistory != null && !conversationHistory.trim().isEmpty()) {
+                fullPrompt.append("=== CONVERSATION HISTORY ===\n").append(conversationHistory).append("\n\n");
+            }
+            
+            fullPrompt.append("=== CUSTOMER MESSAGE ===\n").append(customerMessage).append("\n\n");
+            fullPrompt.append("Your response as the customer service agent:");
+            
+            // Create request body for Ollama
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", "llama3.2:3b");
+            requestBody.put("prompt", fullPrompt.toString());
+            requestBody.put("stream", false);
+            requestBody.put("options", Map.of(
+                "temperature", 0.5,
+                "top_p", 0.8,
+                "max_tokens", 150
+            ));
+            
+            // Call Ollama API
+            String response = webClient.post()
+                .uri("/api/generate")
+                .body(BodyInserters.fromValue(requestBody))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+            
+            // Parse response
+            JsonNode jsonResponse = objectMapper.readTree(response);
+            String aiResponse = jsonResponse.get("response").asText();
+            
+            // Clean up the response
+            aiResponse = cleanAgentResponse(aiResponse);
+            
+            System.out.println("Generated AI agent response for chatbot: " + aiResponse);
+            return aiResponse;
+            
+        } catch (Exception e) {
+            System.err.println("Failed to generate chatbot response: " + e.getMessage());
+            e.printStackTrace();
+            return "Thank you for contacting us. I'm here to help you with your inquiry. Could you please provide more details so I can assist you better?";
+        }
+    }
+    
+    /**
+     * Generate AI agent response for simulation - acts as a customer service agent
+     */
+    public String generateAgentResponseForSimulation(String customerMessage, String context, Long ticketId) {
+        try {
+            // Get conversation history if ticket ID is provided
+            String conversationHistory = "";
+            String ticketContext = "";
+            
+            if (ticketId != null) {
+                Optional<Ticket> ticketOpt = ticketRepository.findById(ticketId);
+                if (ticketOpt.isPresent()) {
+                    Ticket ticket = ticketOpt.get();
+                    
+                    // Build ticket context
+                    ticketContext = String.format("Ticket #%d: %s - %s (Status: %s, Priority: %s, Category: %s)", 
+                        ticket.getId(), ticket.getSubject(), ticket.getDescription(),
+                        ticket.getStatus(), ticket.getPriority(), 
+                        ticket.getCategory() != null ? ticket.getCategory().toString() : "N/A");
+                    
+                    // Get conversation history (last 10 messages for context)
+                    List<TicketMessage> messages = messageRepository.findByTicketIdOrderByCreatedAtAsc(ticketId);
+                    if (!messages.isEmpty()) {
+                        conversationHistory = buildConversationHistoryForAgent(messages);
+                    }
+                }
+            }
+            
+            // Get AI configurations and build context with template variable replacement
+            String configurationContext = "";
+            Ticket ticketForContext = null;
+            try {
+                if (ticketId != null) {
+                    Optional<Ticket> ticketOpt = ticketRepository.findById(ticketId);
+                    if (ticketOpt.isPresent()) {
+                        ticketForContext = ticketOpt.get();
+                        // Pass ticket object for template variable replacement
+                        configurationContext = configurationService.getRelevantConfigurationsAsPrompt(ticketForContext);
+                    }
+                }
+                // Fallback to all active configurations if ticket context fails
+                if (configurationContext == null || configurationContext.trim().isEmpty()) {
+                    configurationContext = configurationService.getAllActiveConfigurationsAsPrompt();
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to load AI configurations: " + e.getMessage());
+                // Continue with default prompt if configuration loading fails
+            }
+            
+            // Create the base prompt for a customer service agent
+            String baseSystemPrompt = "You are a professional customer service agent responding to a customer inquiry. " +
+                "Your goal is to provide helpful, accurate, and empathetic support. " +
+                "Be professional, clear, and solution-oriented. " +
+                "Acknowledge the customer's concern, provide relevant information, and offer next steps when appropriate. " +
+                "Keep responses concise but complete - typically 2-4 sentences. " +
+                "Use a friendly but professional tone. " +
+                "Don't put your response in quotes - just respond directly as the agent.";
+            
+            StringBuilder fullPrompt = new StringBuilder();
+            
+            // Add configuration context if available
+            if (configurationContext != null && !configurationContext.trim().isEmpty()) {
+                fullPrompt.append("=== AI CONFIGURATION AND RULES ===\n");
+                fullPrompt.append("You MUST follow these configurations and rules when responding:\n\n");
+                fullPrompt.append(configurationContext).append("\n\n");
+                fullPrompt.append("=== END CONFIGURATION ===\n\n");
+            }
+            
+            fullPrompt.append("=== BASE SYSTEM PROMPT ===\n");
+            fullPrompt.append(baseSystemPrompt).append("\n\n");
+            
+            if (!ticketContext.isEmpty()) {
+                fullPrompt.append("TICKET CONTEXT:\n").append(ticketContext).append("\n\n");
+            }
+            
+            if (!conversationHistory.isEmpty()) {
+                fullPrompt.append("CONVERSATION HISTORY:\n").append(conversationHistory).append("\n\n");
+            }
+            
+            fullPrompt.append("CUSTOMER MESSAGE: ").append(customerMessage).append("\n\n");
+            fullPrompt.append("Your response as the customer service agent:");
+            
+            // Create request body for Ollama
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("model", "llama3.2:3b");
+            requestBody.put("prompt", fullPrompt.toString());
+            requestBody.put("stream", false);
+            requestBody.put("options", Map.of(
+                "temperature", 0.5,  // Lower temperature for more consistent, professional responses
+                "top_p", 0.8,
+                "max_tokens", 150    // Allow longer responses for agent replies
+            ));
+            
+            // Call Ollama API
+            String response = webClient.post()
+                .uri("/api/generate")
+                .body(BodyInserters.fromValue(requestBody))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+            
+            // Parse response
+            JsonNode jsonResponse = objectMapper.readTree(response);
+            String aiResponse = jsonResponse.get("response").asText();
+            
+            // Clean up the response
+            aiResponse = cleanAgentResponse(aiResponse);
+            
+            System.out.println("Generated AI agent response for simulation: " + aiResponse);
+            return aiResponse;
+            
+        } catch (Exception e) {
+            System.err.println("Failed to generate AI agent response: " + e.getMessage());
+            e.printStackTrace();
+            // Fallback response
+            return "Thank you for contacting us. I'm here to help you with your inquiry. Could you please provide more details so I can assist you better?";
+        }
+    }
+    
+    /**
+     * Build conversation history string from messages (for agent perspective)
+     */
+    private String buildConversationHistoryForAgent(List<TicketMessage> messages) {
+        // Get last 8 messages to keep context manageable but comprehensive
+        List<TicketMessage> recentMessages = messages.size() > 8 ? 
+            messages.subList(messages.size() - 8, messages.size()) : messages;
+            
+        return recentMessages.stream()
+            .map(msg -> {
+                String sender;
+                if (msg.getSenderType().toString().equals("USER")) {
+                    sender = "Customer";
+                } else if (msg.getSenderType().toString().equals("AGENT")) {
+                    sender = "Agent";
+                } else {
+                    sender = "System";
+                }
+                return String.format("%s: %s", sender, msg.getMessage());
+            })
+            .collect(Collectors.joining("\n"));
+    }
+    
+    /**
+     * Clean up agent response
+     */
+    private String cleanAgentResponse(String response) {
+        // Remove any unwanted prefixes or artifacts
+        response = response.trim();
+        
+        // Remove common AI response prefixes for agent responses
+        if (response.startsWith("Agent:")) {
+            response = response.substring("Agent:".length()).trim();
+        }
+        if (response.startsWith("Response:")) {
+            response = response.substring("Response:".length()).trim();
+        }
+        if (response.startsWith("Customer service agent:")) {
+            response = response.substring("Customer service agent:".length()).trim();
+        }
+        if (response.startsWith("Support agent:")) {
+            response = response.substring("Support agent:".length()).trim();
+        }
+        
+        // Remove surrounding quotes if they wrap the entire response
+        if ((response.startsWith("\"") && response.endsWith("\"")) || 
+            (response.startsWith("'") && response.endsWith("'"))) {
+            response = response.substring(1, response.length() - 1).trim();
+        }
+        
+        // Ensure the response starts with a capital letter
+        if (!response.isEmpty() && Character.isLowerCase(response.charAt(0))) {
+            response = Character.toUpperCase(response.charAt(0)) + response.substring(1);
+        }
+        
+        return response;
     }
     
     /**

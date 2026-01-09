@@ -23,6 +23,9 @@ public class Ticket {
     @Enumerated(EnumType.STRING)
     private TicketPriority priority;
     
+    @Enumerated(EnumType.STRING)
+    private TicketCategory category;
+    
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_uid", referencedColumnName = "uid")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "tickets"})
@@ -44,6 +47,7 @@ public class Ticket {
         this.updatedAt = LocalDateTime.now();
         this.status = TicketStatus.OPEN;
         this.priority = TicketPriority.MEDIUM;
+        this.category = TicketCategory.GENERAL;
     }
     
     // Getters and Setters
@@ -61,6 +65,9 @@ public class Ticket {
     
     public TicketPriority getPriority() { return priority; }
     public void setPriority(TicketPriority priority) { this.priority = priority; }
+    
+    public TicketCategory getCategory() { return category; }
+    public void setCategory(TicketCategory category) { this.category = category; }
     
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }

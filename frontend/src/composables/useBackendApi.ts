@@ -61,6 +61,7 @@ export interface Ticket {
   description: string
   status: 'OPEN' | 'IN_PROGRESS' | 'PENDING' | 'RESOLVED' | 'CLOSED'
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  category?: 'DEPOSITS' | 'WITHDRAWALS' | 'ACCOUNT' | 'VERIFICATION' | 'PAYMENTS' | 'TECHNICAL' | 'GENERAL'
   user: User
   createdAt: string
   updatedAt: string
@@ -111,6 +112,10 @@ export function useBackendApi() {
 
   const analyzeMessageSentiment = (message: string) => {
     return api.post<{score: number, label: string}>('/ai/sentiment', { text: message })
+  }
+
+  const generateChatbotResponse = (message: string, conversationHistory: string) => {
+    return api.post<{response: string}>('/ai/chatbot/response', { message, conversationHistory })
   }
 
   // User API methods
@@ -191,6 +196,41 @@ export function useBackendApi() {
     return api.post('/analytics/dashboard/query', { widgets, query })
   }
 
+  // Simulation API methods
+  const getTicketsForSimulation = (request: any) => {
+    return api.post('/simulation/tickets', request)
+  }
+
+  const runSimulation = (request: any) => {
+    return api.post('/simulation/run', request)
+  }
+
+  const getSimulationResults = (runId: string) => {
+    return api.get(`/simulation/results/${runId}`)
+  }
+
+  const updateSimulationResult = (resultId: number, request: any) => {
+    return api.put(`/simulation/results/${resultId}`, request)
+  }
+
+  const simulateSingleTicket = (ticketId: number, modelName: string, runId: string) => {
+    return api.post('/simulation/simulate-ticket', { ticketId, modelName, runId })
+  }
+
+  // AI Configuration API methods
+  const getAIConfiguration = () => {
+    return api.get('/ai-configuration')
+  }
+
+  const updateAIConfiguration = (configuration: any) => {
+    return api.put('/ai-configuration', configuration)
+  }
+
+  // Chatbot API methods
+  const createTicketFromChat = (request: any) => {
+    return api.post('/tickets/from-chat', request)
+  }
+
   return {
     checkHealth,
     getVersion,
@@ -204,6 +244,7 @@ export function useBackendApi() {
     generateAIResponse,
     getConversationSentiment,
     analyzeMessageSentiment,
+    generateChatbotResponse,
     // User methods
     getAllUsers,
     getUserById,
@@ -224,6 +265,17 @@ export function useBackendApi() {
     getSentimentTrends,
     getAverageResolutionTime,
     analyzeDashboard,
-    queryDashboard
+    queryDashboard,
+    // Simulation methods
+    getTicketsForSimulation,
+    runSimulation,
+    getSimulationResults,
+    updateSimulationResult,
+    simulateSingleTicket,
+    // AI Configuration methods
+    getAIConfiguration,
+    updateAIConfiguration,
+    // Chatbot methods
+    createTicketFromChat
   }
 }

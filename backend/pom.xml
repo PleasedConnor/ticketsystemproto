@@ -78,7 +78,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Stanford CoreNLP for local sentiment analysis -->
+        <!-- Stanford CoreNLP for local ment analysis -->
         <dependency>
             <groupId>edu.stanford.nlp</groupId>
             <artifactId>stanford-corenlp</artifactId>

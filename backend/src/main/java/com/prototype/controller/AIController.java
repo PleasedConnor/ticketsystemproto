@@ -38,6 +38,26 @@ public class AIController {
     }
     
     /**
+     * Generate AI response for chatbot (no ticket required)
+     */
+    @PostMapping("/chatbot/response")
+    public ResponseEntity<Map<String, String>> generateChatbotResponse(
+            @RequestBody ChatbotRequest request) {
+        try {
+            String response = aiService.generateAgentResponseForChatbot(
+                request.getMessage(),
+                request.getConversationHistory()
+            );
+            return ResponseEntity.ok(Map.of("response", response));
+        } catch (Exception e) {
+            System.err.println("Failed to generate chatbot response: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.ok(Map.of("response", 
+                "I apologize, but I encountered an error. Please try again."));
+        }
+    }
+    
+    /**
      * Get conversation sentiment for a ticket
      */
     @GetMapping("/tickets/{ticketId}/sentiment")
@@ -107,5 +127,16 @@ public class AIController {
         
         public TicketMessage getMessage() { return message; }
         public void setMessage(TicketMessage message) { this.message = message; }
+    }
+    
+    public static class ChatbotRequest {
+        private String message;
+        private String conversationHistory;
+        
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+        
+        public String getConversationHistory() { return conversationHistory; }
+        public void setConversationHistory(String conversationHistory) { this.conversationHistory = conversationHistory; }
     }
 }

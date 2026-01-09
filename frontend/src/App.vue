@@ -9,6 +9,9 @@
           <RouterLink to="/" class="nav-link">Home</RouterLink>
           <RouterLink to="/tickets" class="nav-link">Tickets</RouterLink>
           <RouterLink to="/analytics" class="nav-link">Analytics</RouterLink>
+          <RouterLink to="/simulation" class="nav-link">Simulation</RouterLink>
+          <RouterLink to="/ai-configuration" class="nav-link">AI Config</RouterLink>
+          <RouterLink to="/chatbot" class="nav-link">Chatbot</RouterLink>
           <RouterLink to="/about" class="nav-link">About</RouterLink>
         </div>
       </nav>
