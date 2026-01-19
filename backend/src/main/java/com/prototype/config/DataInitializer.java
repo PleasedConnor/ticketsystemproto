@@ -1,6 +1,8 @@
 package com.prototype.config;
 
 import com.prototype.entity.*;
+import com.prototype.entity.CustomerProfileField;
+import com.prototype.entity.TicketField;
 import com.prototype.repository.UserRepository;
 import com.prototype.repository.TicketRepository;
 import com.prototype.repository.TicketMessageRepository;
@@ -17,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 
 
@@ -46,6 +50,18 @@ public class DataInitializer implements CommandLineRunner {
     
     @PersistenceContext
     private EntityManager entityManager;
+    
+    @Autowired(required = false)
+    private com.prototype.repository.MetadataConnectionRepository metadataConnectionRepository;
+    
+    @Autowired(required = false)
+    private com.prototype.repository.MetadataFieldMappingRepository metadataFieldMappingRepository;
+    
+    @Autowired(required = false)
+    private com.prototype.repository.CustomerProfileFieldRepository customerProfileFieldRepository;
+    
+    @Autowired(required = false)
+    private com.prototype.repository.TicketFieldRepository ticketFieldRepository;
 
     @Override
     public void run(String... args) throws Exception {
@@ -57,6 +73,15 @@ public class DataInitializer implements CommandLineRunner {
         } else {
             System.out.println("Database already contains data. Skipping seed data initialization to preserve user-created content.");
         }
+        
+        // Initialize demo metadata connection (always, if not exists)
+        initializeDemoMetadataConnection();
+        
+        // Initialize customer profile fields (always, if not exists)
+        initializeCustomerProfileFields();
+        
+        // Initialize ticket fields (always, if not exists)
+        initializeTicketFields();
     }
 
     @Transactional
@@ -443,5 +468,170 @@ public class DataInitializer implements CommandLineRunner {
             
             systemMetricsRepository.save(metrics);
         }
+    }
+    
+    @Transactional
+    private void initializeDemoMetadataConnection() {
+        if (metadataConnectionRepository == null || metadataFieldMappingRepository == null) {
+            System.out.println("Metadata repositories not available, skipping demo connection initialization");
+            return;
+        }
+        
+        // Check if demo connection already exists
+        boolean demoExists = metadataConnectionRepository.findAll().stream()
+            .anyMatch(conn -> "Demo Client API".equals(conn.getName()));
+        
+        if (demoExists) {
+            System.out.println("Demo metadata connection already exists, skipping initialization");
+            return;
+        }
+        
+        try {
+            System.out.println("Initializing demo metadata connection...");
+            
+            // Create demo connection
+            MetadataConnection demoConnection = new MetadataConnection();
+            demoConnection.setName("Demo Client API");
+            demoConnection.setApiEndpoint("https://api.demo-client.com/v1/user-data");
+            demoConnection.setAuthType(MetadataConnection.AuthType.API_KEY);
+            demoConnection.setRequestMethod("GET");
+            demoConnection.setIsActive(true);
+            
+            // Set auth credentials (API Key)
+            ObjectMapper objectMapper = new ObjectMapper();
+            Map<String, String> authCredentials = Map.of(
+                "header", "X-API-Key",
+                "apiKey", "demo-api-key-12345"
+            );
+            demoConnection.setAuthCredentials(objectMapper.writeValueAsString(authCredentials));
+            
+            // Set headers
+            Map<String, String> headers = Map.of(
+                "Content-Type", "application/json",
+                "Accept", "application/json"
+            );
+            demoConnection.setRequestHeaders(objectMapper.writeValueAsString(headers));
+            
+            demoConnection = metadataConnectionRepository.save(demoConnection);
+            
+            // Create demo field mappings
+            List<MetadataFieldMapping> mappings = List.of(
+                createMapping(demoConnection, "user.name", "{{user.name}}", "STRING"),
+                createMapping(demoConnection, "user.email", "{{user.email}}", "STRING"),
+                createMapping(demoConnection, "user.location", "{{user.location}}", "STRING"),
+                createMapping(demoConnection, "user.device", "{{user.device}}", "STRING"),
+                createMapping(demoConnection, "order.id", "{{order.id}}", "STRING"),
+                createMapping(demoConnection, "order.status", "{{order.status}}", "STRING"),
+                createMapping(demoConnection, "order.total", "{{order.total}}", "NUMBER")
+            );
+            
+            metadataFieldMappingRepository.saveAll(mappings);
+            
+            System.out.println("Demo metadata connection initialized with " + mappings.size() + " field mappings");
+        } catch (Exception e) {
+            System.err.println("Failed to initialize demo metadata connection: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private MetadataFieldMapping createMapping(MetadataConnection connection, String externalPath, String internalVar, String dataType) {
+        MetadataFieldMapping mapping = new MetadataFieldMapping();
+        mapping.setConnection(connection);
+        mapping.setExternalFieldPath(externalPath);
+        mapping.setInternalVariable(internalVar);
+        mapping.setDataType(dataType);
+        mapping.setIsActive(true);
+        mapping.setAiAccessible(true); // Default to accessible for demo
+        mapping.setDescription("Demo mapping: " + externalPath + " -> " + internalVar);
+        return mapping;
+    }
+    
+    @Transactional
+    private void initializeCustomerProfileFields() {
+        if (customerProfileFieldRepository == null) {
+            return; // Repository not available
+        }
+        
+        try {
+            // Only create if no fields exist
+            if (customerProfileFieldRepository.count() > 0) {
+                System.out.println("Customer profile fields already exist. Skipping initialization.");
+                return;
+            }
+            
+            List<CustomerProfileField> fields = List.of(
+                createProfileField("Customer Name", "customer_name", "{{user.name}}", "TEXT", 0, true, false, "👤", "Customer full name"),
+                createProfileField("Email", "customer_email", "{{user.email}}", "EMAIL", 1, true, false, "📧", "Customer email address"),
+                createProfileField("Phone", "customer_phone", "{{user.phone}}", "PHONE", 2, true, true, "📞", "Contact phone number"),
+                createProfileField("Order Total", "order_total", "{{order.total}}", "NUMBER", 3, true, false, "💰", "Total order value"),
+                createProfileField("Order Status", "order_status", "{{order.status}}", "TEXT", 4, true, true, "📦", "Current order status"),
+                createProfileField("Location", "customer_location", "{{user.location}}", "TEXT", 5, true, false, "📍", "Customer location")
+            );
+            
+            customerProfileFieldRepository.saveAll(fields);
+            System.out.println("Initialized " + fields.size() + " customer profile fields");
+        } catch (Exception e) {
+            System.err.println("Failed to initialize customer profile fields: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private CustomerProfileField createProfileField(String label, String key, String metadataVar, String type, int order, boolean visible, boolean editable, String icon, String description) {
+        CustomerProfileField field = new CustomerProfileField();
+        field.setFieldLabel(label);
+        field.setFieldKey(key);
+        field.setMetadataVariable(metadataVar);
+        field.setFieldType(type);
+        field.setDisplayOrder(order);
+        field.setIsVisible(visible);
+        field.setIsEditable(editable);
+        field.setIcon(icon);
+        field.setDescription(description);
+        return field;
+    }
+    
+    @Transactional
+    private void initializeTicketFields() {
+        if (ticketFieldRepository == null) {
+            return; // Repository not available
+        }
+        
+        try {
+            // Only create if no fields exist
+            if (ticketFieldRepository.count() > 0) {
+                System.out.println("Ticket fields already exist. Skipping initialization.");
+                return;
+            }
+            
+            List<TicketField> fields = List.of(
+                createTicketField("Name", "customer_name", "{{user.name}}", "TEXT", "CUSTOMER_INFO", 0, true, false, "👤", "Customer full name"),
+                createTicketField("Email", "customer_email", "{{user.email}}", "EMAIL", "CUSTOMER_INFO", 1, true, false, "📧", "Customer email address"),
+                createTicketField("Phone", "customer_phone", "{{user.phone}}", "PHONE", "CUSTOMER_INFO", 2, true, false, "📞", "Contact phone number"),
+                createTicketField("Location", "customer_location", "{{user.location}}", "TEXT", "CUSTOMER_INFO", 3, true, false, "📍", "Customer location"),
+                createTicketField("Device", "customer_device", "{{user.device}}", "TEXT", "CUSTOMER_INFO", 4, true, false, "💻", "Customer device type"),
+                createTicketField("UID", "customer_uid", "{{user.uid}}", "TEXT", "CUSTOMER_INFO", 5, true, false, "🆔", "Customer unique identifier")
+            );
+            
+            ticketFieldRepository.saveAll(fields);
+            System.out.println("Initialized " + fields.size() + " ticket fields");
+        } catch (Exception e) {
+            System.err.println("Failed to initialize ticket fields: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    
+    private TicketField createTicketField(String label, String key, String metadataVar, String type, String location, int order, boolean visible, boolean editable, String icon, String description) {
+        TicketField field = new TicketField();
+        field.setFieldLabel(label);
+        field.setFieldKey(key);
+        field.setMetadataVariable(metadataVar);
+        field.setFieldType(type);
+        field.setDisplayLocation(location);
+        field.setDisplayOrder(order);
+        field.setIsVisible(visible);
+        field.setIsEditable(editable);
+        field.setIcon(icon);
+        field.setDescription(description);
+        return field;
     }
 }

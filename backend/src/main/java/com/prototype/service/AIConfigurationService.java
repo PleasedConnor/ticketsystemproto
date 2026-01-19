@@ -17,6 +17,9 @@ public class AIConfigurationService {
     @Autowired
     private AIConfigurationRepository configurationRepository;
     
+    @Autowired(required = false)
+    private com.prototype.service.MetadataService metadataService;
+    
     // Pattern for template variables like {{user.name}}, {{user.location}}, etc.
     private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{\\{([^}]+)\\}\\}");
     
@@ -105,12 +108,25 @@ public class AIConfigurationService {
     /**
      * Replace template variables in configuration text
      * Supported variables: {{user.name}}, {{user.location}}, {{user.email}}, {{ticket.id}}, {{ticket.status}}, etc.
-     * If a variable cannot be resolved (empty or no context), it's replaced with an empty string.
-     * This removes the {{variable}} syntax completely, allowing the configuration's explicit instructions
-     * (e.g., "ask for the customer's name if not available") to guide the AI behavior.
+     * 
+     * When ticket is null (e.g., in chatbot context):
+     * - Variables are left as-is in the text so the AI can see the instructions
+     * - This allows rules like "if {{user.name}} is empty, ask for it" to work
+     * 
+     * When ticket is provided:
+     * - Variables are replaced with actual values if available
+     * - If a variable cannot be resolved (empty), it's replaced with an empty string
+     * - This removes the {{variable}} syntax, allowing the configuration's explicit instructions
+     *   (e.g., "ask for the customer's name if not available") to guide the AI behavior.
      */
     public String replaceTemplateVariables(String text, Ticket ticket) {
         if (text == null || text.trim().isEmpty()) {
+            return text;
+        }
+        
+        // If ticket is null (chatbot context), leave variables as-is so AI can see instructions
+        if (ticket == null) {
+            System.out.println("Template variable replacement: Ticket is null, leaving variables as-is for AI instructions");
             return text;
         }
         
@@ -135,10 +151,26 @@ public class AIConfigurationService {
      * Returns the actual value if available, or empty string if not available.
      * Empty string removes the {{variable}} syntax, allowing configuration instructions
      * (like "ask for information if not available") to guide the AI.
+     * 
+     * Priority: 1. Metadata mappings (external API), 2. Internal ticket/user data
      */
     private String getVariableValue(String variable, Ticket ticket) {
         if (variable == null || variable.trim().isEmpty()) {
             return "";
+        }
+        
+        String fullVariable = "{{" + variable + "}}";
+        
+        // First, try to get value from metadata mappings (external API with user context)
+        if (metadataService != null && ticket != null) {
+            try {
+                String mappedValue = metadataService.getMappedValue(fullVariable, ticket);
+                if (mappedValue != null && !mappedValue.trim().isEmpty()) {
+                    return mappedValue;
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to get metadata value for " + variable + ": " + e.getMessage());
+            }
         }
         
         String[] parts = variable.split("\\.");
@@ -165,10 +197,17 @@ public class AIConfigurationService {
                     case "device":
                         return user.getDevice() != null && !user.getDevice().trim().isEmpty() ? user.getDevice() : "";
                     default:
+                        // Check metadata mappings for custom user fields
+                        if (metadataService != null && ticket != null) {
+                            String mappedValue = metadataService.getMappedValue(fullVariable, ticket);
+                            if (mappedValue != null && !mappedValue.trim().isEmpty()) {
+                                return mappedValue;
+                            }
+                        }
                         return ""; // Unknown user field, return empty
                 }
             } else {
-                // No ticket or user available - return empty string (variable will be removed)
+                // No ticket or user available - cannot fetch user-specific data
                 // The configuration text itself contains instructions to ask if needed
                 return "";
             }
@@ -186,11 +225,26 @@ public class AIConfigurationService {
                     case "subject":
                         return ticket.getSubject() != null ? ticket.getSubject() : "";
                     default:
+                        // Check metadata mappings for custom ticket fields
+                        if (metadataService != null && ticket != null) {
+                            String mappedValue = metadataService.getMappedValue(fullVariable, ticket);
+                            if (mappedValue != null && !mappedValue.trim().isEmpty()) {
+                                return mappedValue;
+                            }
+                        }
                         return ""; // Unknown ticket field, return empty
                 }
             } else {
-                // No ticket available - return empty string
+                // No ticket available - cannot fetch ticket-specific data
                 return "";
+            }
+        } else {
+            // Custom entity (e.g., order, product) - check metadata mappings with user context
+            if (metadataService != null && ticket != null) {
+                String mappedValue = metadataService.getMappedValue(fullVariable, ticket);
+                if (mappedValue != null && !mappedValue.trim().isEmpty()) {
+                    return mappedValue;
+                }
             }
         }
         
