@@ -2344,7 +2344,7 @@ onMounted(async () => {
 }
 
 .ai-modal-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #dc3545 0%, #c0392b 100%);
   color: white;
   padding: 1.5rem 2rem;
   display: flex;
@@ -2434,7 +2434,7 @@ onMounted(async () => {
   font-size: 1.1rem;
   font-weight: 600;
   padding-left: 0.5rem;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid #dc3545;
 }
 
 .insight-category ul,
@@ -2519,13 +2519,13 @@ onMounted(async () => {
 
 .query-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #dc3545;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .query-btn {
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #dc3545 0%, #c0392b 100%);
   color: white;
   border: none;
   border-radius: 6px;

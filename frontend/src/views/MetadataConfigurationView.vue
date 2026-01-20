@@ -1,10 +1,9 @@
 <template>
-  <div class="chatbot-container">
-    <div class="chatbot-content">
-      <!-- Header -->
-      <header class="chatbot-header">
-        <h1>AI Chatbot</h1>
-        <p class="subtitle">Test your AI customer service agent</p>
+  <div class="metadata-config-container">
+    <div class="content">
+      <header class="page-header">
+        <h1>Metadata Configuration</h1>
+        <p class="subtitle">Manage metadata connections and field configurations</p>
       </header>
 
       <!-- Tab Navigation -->
@@ -22,14 +21,19 @@
 
         <!-- Tab Content -->
         <div class="tab-content">
-          <!-- End User Chatbot Tab -->
-          <div v-show="activeTab === 'end-user'" class="tab-panel">
-            <EndUserChatbot />
+          <!-- Inbound Metadata Tab -->
+          <div v-show="activeTab === 'inbound'" class="tab-panel">
+            <InboundMetadataView />
           </div>
 
-          <!-- Agent Chatbot Tab -->
-          <div v-show="activeTab === 'agent'" class="tab-panel">
-            <AgentChatbot />
+          <!-- Chat Fields Tab -->
+          <div v-show="activeTab === 'chat'" class="tab-panel">
+            <ChatFieldsView />
+          </div>
+
+          <!-- Ticket Fields Tab -->
+          <div v-show="activeTab === 'ticket'" class="tab-panel">
+            <TicketFieldsView />
           </div>
         </div>
       </div>
@@ -39,57 +43,56 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import EndUserChatbot from '@/components/chatbot/EndUserChatbot.vue'
-import AgentChatbot from '@/components/chatbot/AgentChatbot.vue'
+import InboundMetadataView from '@/components/metadata/InboundMetadataView.vue'
+import ChatFieldsView from '@/components/metadata/ChatFieldsView.vue'
+import TicketFieldsView from '@/components/metadata/TicketFieldsView.vue'
 
-const activeTab = ref('end-user')
+const activeTab = ref('inbound')
 
 const tabs = [
-  { id: 'end-user', label: 'End User Chatbot' },
-  { id: 'agent', label: 'Agent Chatbot' }
+  { id: 'inbound', label: 'Inbound Metadata' },
+  { id: 'chat', label: 'Chat Fields' },
+  { id: 'ticket', label: 'Ticket Fields' }
 ]
 </script>
 
 <style scoped>
-.chatbot-container {
-  min-height: 100vh;
-  background: #f8f9fa;
+.metadata-config-container {
   padding: 2rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.chatbot-content {
   max-width: 1400px;
   margin: 0 auto;
-  width: 100%;
+}
+
+.content {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 4rem);
+  gap: 2rem;
 }
 
-.chatbot-header {
-  margin-bottom: 1.5rem;
+.page-header {
+  margin-bottom: 1rem;
 }
 
-.chatbot-header h1 {
-  font-size: 2rem;
+.page-header h1 {
   margin: 0 0 0.5rem 0;
+  font-size: 2rem;
+  color: #333;
 }
 
 .subtitle {
-  color: #6c757d;
   margin: 0;
+  color: #666;
+  font-size: 1rem;
 }
 
 .tabs-container {
-  flex: 1;
+  background: #fff;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 1rem;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  min-height: 600px;
 }
 
 .tabs-header {
@@ -109,6 +112,7 @@ const tabs = [
   font-weight: 600;
   color: #666;
   transition: all 0.2s;
+  position: relative;
 }
 
 .tab-button:hover {
@@ -124,16 +128,12 @@ const tabs = [
 
 .tab-content {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
 .tab-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  height: 100%;
+  overflow-y: auto;
   animation: fadeIn 0.2s;
 }
 

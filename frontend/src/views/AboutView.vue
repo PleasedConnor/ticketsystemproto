@@ -156,7 +156,7 @@ h1 {
   background: #f8f9fa;
   padding: 0.75rem;
   border-radius: 5px;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid #dc3545;
 }
 
 .code-block {

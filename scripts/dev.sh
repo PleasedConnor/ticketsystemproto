@@ -32,9 +32,10 @@ fi
 # Start backend
 echo "☕ Starting Java backend on port 8080..."
 cd backend
-./mvnw spring-boot:run &
+./mvnw spring-boot:run > ../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
+echo "📝 Backend logs are being written to: backend.log"
 
 # Wait a moment for backend to start
 sleep 3

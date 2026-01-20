@@ -969,9 +969,9 @@ onMounted(async () => {
 }
 
 .tab-button.active {
-  background: #667eea;
+  background: #dc3545;
   color: white;
-  border-color: #667eea;
+  border-color: #dc3545;
 }
 
 .grid-2 {
@@ -1124,7 +1124,7 @@ onMounted(async () => {
 
 .progress-fill {
   height: 100%;
-  background: #667eea;
+  background: #dc3545;
   transition: width 0.3s;
 }
 

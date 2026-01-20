@@ -57,30 +57,33 @@
           <!-- Customer Info -->
           <div class="customer-info">
             <h2>Customer's Profile</h2>
-            <div class="customer-details">
-              <div class="detail-row">
-                <span class="label">Name:</span>
-                <span class="value">{{ selectedTicket.user.name }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="label">Email:</span>
-                <span class="value">{{ selectedTicket.user.email }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="label">Phone:</span>
-                <span class="value">{{ selectedTicket.user.phoneNumber }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="label">Location:</span>
-                <span class="value">{{ selectedTicket.user.location }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="label">Device:</span>
-                <span class="value">{{ selectedTicket.user.device }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="label">UID:</span>
-                <span class="value">{{ selectedTicket.user.uid }}</span>
+            <div v-if="loadingCustomerFields" class="loading-fields">
+              <p>Loading customer information...</p>
+            </div>
+            <div v-else-if="customerFields.length === 0" class="no-fields">
+              <p>No customer profile fields configured.</p>
+              <p class="hint">Configure fields in Ticket Fields settings.</p>
+            </div>
+            <div v-else class="customer-details">
+              <div 
+                v-for="field in sortedCustomerFields" 
+                :key="field.fieldKey"
+                class="detail-row"
+              >
+                <span class="label">
+                  <span v-if="field.icon" class="field-icon">{{ field.icon }}</span>
+                  {{ field.fieldLabel }}:
+                </span>
+                <span class="value">
+                  <input
+                    v-if="field.isEditable"
+                    v-model="field.value"
+                    :type="getInputType(field.fieldType)"
+                    class="field-input"
+                    @blur="updateField(field)"
+                  />
+                  <span v-else>{{ field.value || 'N/A' }}</span>
+                </span>
               </div>
             </div>
           </div>
@@ -232,10 +235,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useBackendApi, type Ticket, type TicketMessage } from '@/composables/useBackendApi'
 
-const { getAllTickets, getTicketMessages, addTicketMessage, updateTicketStatus: updateStatus, generateAIResponse, getConversationSentiment, analyzeMessageSentiment } = useBackendApi()
+const { getAllTickets, getTicketMessages, addTicketMessage, updateTicketStatus: updateStatus, generateAIResponse, getConversationSentiment, analyzeMessageSentiment, getTicketFieldsByLocation, getTicketFieldData } = useBackendApi()
 
 const tickets = ref<Ticket[]>([])
 const selectedTicket = ref<Ticket | null>(null)
@@ -248,6 +251,20 @@ const currentSentiment = ref('NEUTRAL') // Will be dynamically updated later
 const activeDropdown = ref<number | null>(null)
 const messageSentiments = ref<Record<number, {label: string, score: number}>>({})
 const collapsedSentiments = ref<Record<number, boolean>>({})
+
+// Customer profile fields
+const loadingCustomerFields = ref(false)
+const customerFields = ref<Array<{
+  fieldKey: string
+  fieldLabel: string
+  metadataVariable: string
+  fieldType: string
+  value: string
+  isEditable: boolean
+  icon?: string
+  description?: string
+  displayOrder: number
+}>>([])
 
 const filteredTickets = computed(() => {
   if (!searchQuery.value) return tickets.value
@@ -300,6 +317,78 @@ const loadTickets = async () => {
 const selectTicket = async (ticket: Ticket) => {
   selectedTicket.value = ticket
   await loadMessages(ticket.id)
+  await loadCustomerFields(ticket.id)
+}
+
+const sortedCustomerFields = computed(() => {
+  return [...customerFields.value].sort((a, b) => a.displayOrder - b.displayOrder)
+})
+
+const loadCustomerFields = async (ticketId: number) => {
+  loadingCustomerFields.value = true
+  try {
+    // Get field definitions for CUSTOMER_INFO location
+    const fieldsResponse = await getTicketFieldsByLocation('CUSTOMER_INFO')
+    const fields = fieldsResponse.data || []
+    
+    // Get resolved field data for this ticket
+    const dataResponse = await getTicketFieldData(ticketId, 'CUSTOMER_INFO')
+    const fieldData = dataResponse.data || {}
+    
+    // Combine field definitions with resolved values
+    // fieldData structure: { "customer_name": { "fieldKey": "...", "value": "...", ... }, ... }
+    customerFields.value = fields.map(field => {
+      const fieldInfo = fieldData[field.fieldKey]
+      let value = ''
+      
+      // Extract value from nested object structure
+      if (fieldInfo && typeof fieldInfo === 'object' && 'value' in fieldInfo) {
+        value = fieldInfo.value || ''
+      } else if (fieldInfo && typeof fieldInfo === 'string') {
+        // Fallback: if it's already a string, use it directly
+        value = fieldInfo
+      }
+      
+      return {
+        fieldKey: field.fieldKey,
+        fieldLabel: field.fieldLabel,
+        metadataVariable: field.metadataVariable || '',
+        fieldType: field.fieldType,
+        isEditable: field.isEditable || false,
+        icon: field.icon || '',
+        description: field.description || '',
+        displayOrder: field.displayOrder || 0,
+        value: value
+      }
+    })
+  } catch (error) {
+    console.error('Failed to load customer fields:', error)
+    customerFields.value = []
+  } finally {
+    loadingCustomerFields.value = false
+  }
+}
+
+const updateField = async (field: any) => {
+  // TODO: Implement API call to update field value
+  console.log('Updating field:', field.fieldKey, 'to:', field.value)
+}
+
+const getInputType = (fieldType: string) => {
+  switch (fieldType) {
+    case 'EMAIL':
+      return 'email'
+    case 'PHONE':
+      return 'tel'
+    case 'NUMBER':
+      return 'number'
+    case 'DATE':
+      return 'date'
+    case 'BOOLEAN':
+      return 'checkbox'
+    default:
+      return 'text'
+  }
 }
 
 const loadMessages = async (ticketId: number) => {
@@ -636,6 +725,38 @@ onMounted(() => {
 
 .value {
   color: #333;
+}
+
+.field-icon {
+  margin-right: 0.25rem;
+}
+
+.field-input {
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: #dc3545;
+  box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.1);
+}
+
+.loading-fields,
+.no-fields {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+}
+
+.no-fields .hint {
+  font-size: 0.85rem;
+  color: #999;
+  margin-top: 0.5rem;
 }
 
 .ticket-controls {

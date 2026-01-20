@@ -226,9 +226,281 @@ export function useBackendApi() {
     return api.put('/ai-configuration', configuration)
   }
 
+  // AI Rule API methods
+  const getAllAIRules = () => {
+    return api.get('/ai/rules')
+  }
+
+  const getAIRulesByCategory = (category: string) => {
+    return api.get(`/ai/rules/category/${category}`)
+  }
+
+  const getAIRule = (id: number) => {
+    return api.get(`/ai/rules/${id}`)
+  }
+
+  const createAIRule = (rule: any) => {
+    return api.post('/ai/rules', rule)
+  }
+
+  const updateAIRule = (id: number, rule: any) => {
+    return api.put(`/ai/rules/${id}`, rule)
+  }
+
+  const deleteAIRule = (id: number) => {
+    return api.delete(`/ai/rules/${id}`)
+  }
+
+  const reorderAIRules = (rules: any[]) => {
+    return api.post('/ai/rules/reorder', rules)
+  }
+
+  // Knowledge Base API methods
+  const getAllCategories = () => {
+    return api.get('/knowledge-base/categories')
+  }
+
+  const getCategoryById = (id: number) => {
+    return api.get(`/knowledge-base/categories/${id}`)
+  }
+
+  const createCategory = (category: any) => {
+    return api.post('/knowledge-base/categories', category)
+  }
+
+  const updateCategory = (id: number, category: any) => {
+    return api.put(`/knowledge-base/categories/${id}`, category)
+  }
+
+  const deleteCategory = (id: number) => {
+    return api.delete(`/knowledge-base/categories/${id}`)
+  }
+
+  const getAllArticles = () => {
+    return api.get('/knowledge-base/articles')
+  }
+
+  const getActiveArticles = () => {
+    return api.get('/knowledge-base/articles/active')
+  }
+
+  const getArticlesByCategory = (categoryId: number) => {
+    return api.get(`/knowledge-base/articles/category/${categoryId}`)
+  }
+
+  const getArticleById = (id: number) => {
+    return api.get(`/knowledge-base/articles/${id}`)
+  }
+
+  const createArticle = (article: any) => {
+    return api.post('/knowledge-base/articles', article)
+  }
+
+  const updateArticle = (id: number, article: any) => {
+    return api.put(`/knowledge-base/articles/${id}`, article)
+  }
+
+  const deleteArticle = (id: number) => {
+    return api.delete(`/knowledge-base/articles/${id}`)
+  }
+
+  const searchArticles = (query: string) => {
+    return api.post('/knowledge-base/search', { query })
+  }
+
   // Chatbot API methods
   const createTicketFromChat = (request: any) => {
     return api.post('/tickets/from-chat', request)
+  }
+
+  // Metadata API methods
+  const getAllMetadataConnections = () => {
+    return api.get('/metadata/connections')
+  }
+
+  const getActiveMetadataConnections = () => {
+    return api.get('/metadata/connections/active')
+  }
+
+  const getMetadataConnection = (id: number) => {
+    return api.get(`/metadata/connections/${id}`)
+  }
+
+  const createMetadataConnection = (connection: any) => {
+    return api.post('/metadata/connections', connection)
+  }
+
+  const updateMetadataConnection = (id: number, connection: any) => {
+    return api.put(`/metadata/connections/${id}`, connection)
+  }
+
+  const deleteMetadataConnection = (id: number) => {
+    return api.delete(`/metadata/connections/${id}`)
+  }
+
+  const testMetadataConnection = (id: number) => {
+    return api.post(`/metadata/connections/${id}/test`)
+  }
+
+  const getMetadataMappings = (connectionId: number) => {
+    return api.get(`/metadata/connections/${connectionId}/mappings`)
+  }
+
+  const saveMetadataMappings = (connectionId: number, mappings: any[]) => {
+    return api.post(`/metadata/connections/${connectionId}/mappings`, mappings)
+  }
+
+  const createMetadataMapping = (mapping: any) => {
+    return api.post('/metadata/mappings', mapping)
+  }
+
+  const updateMetadataMapping = (id: number, mapping: any) => {
+    return api.put(`/metadata/mappings/${id}`, mapping)
+  }
+
+  const getAllMappingsForAIAccess = () => {
+    return api.get('/metadata/mappings/ai-access')
+  }
+
+  const updateAIAccess = (mappingId: number, aiAccessible: boolean) => {
+    return api.put(`/metadata/mappings/${mappingId}/ai-access`, { aiAccessible })
+  }
+
+  const bulkUpdateAIAccess = (accessMap: Record<number, boolean>) => {
+    return api.put('/metadata/mappings/ai-access/bulk', accessMap)
+  }
+
+  const testMappingValue = (mappingId: number, ticketId?: number) => {
+    const params = ticketId ? `?ticketId=${ticketId}` : ''
+    return api.get(`/metadata/mappings/${mappingId}/test-value${params}`)
+  }
+
+  // Customer Profile methods
+  const getCustomerProfileFields = () => {
+    return api.get('/customer-profile/fields')
+  }
+
+  const getAllCustomerProfileFields = () => {
+    return api.get('/customer-profile/fields/all')
+  }
+
+  const getCustomerProfileData = (ticketId: number) => {
+    return api.get(`/customer-profile/data/${ticketId}`)
+  }
+
+  const createCustomerProfileField = (field: any) => {
+    return api.post('/customer-profile/fields', field)
+  }
+
+  const updateCustomerProfileField = (id: number, field: any) => {
+    return api.put(`/customer-profile/fields/${id}`, field)
+  }
+
+  const deleteCustomerProfileField = (id: number) => {
+    return api.delete(`/customer-profile/fields/${id}`)
+  }
+
+  // Ticket Fields methods
+  const getAllTicketFields = () => {
+    return api.get('/ticket-fields/fields/all')
+  }
+
+  const getTicketFieldsByLocation = (location: string) => {
+    return api.get(`/ticket-fields/fields/location/${location}`)
+  }
+
+  const getTicketFieldData = (ticketId: number, location: string) => {
+    return api.get(`/ticket-fields/data/${ticketId}/${location}`)
+  }
+
+  const createTicketField = (field: any) => {
+    return api.post('/ticket-fields/fields', field)
+  }
+
+  const updateTicketField = (id: number, field: any) => {
+    return api.put(`/ticket-fields/fields/${id}`, field)
+  }
+
+  const deleteTicketField = (id: number) => {
+    return api.delete(`/ticket-fields/fields/${id}`)
+  }
+
+  const deleteMetadataMapping = (id: number) => {
+    return api.delete(`/metadata/mappings/${id}`)
+  }
+
+  const getAvailableMetadataVariables = (excludeVariable?: string) => {
+    const params = excludeVariable ? { excludeVariable } : {}
+    return api.get('/metadata/variables/available', { params })
+  }
+
+  // Third Party Integration methods
+  const getAllThirdPartyIntegrations = () => {
+    return api.get('/third-party-integrations')
+  }
+
+  const getActiveThirdPartyIntegrations = () => {
+    return api.get('/third-party-integrations/active')
+  }
+
+  const getThirdPartyIntegration = (id: number) => {
+    return api.get(`/third-party-integrations/${id}`)
+  }
+
+  const createThirdPartyIntegration = (integration: any) => {
+    return api.post('/third-party-integrations', integration)
+  }
+
+  const updateThirdPartyIntegration = (id: number, integration: any) => {
+    return api.put(`/third-party-integrations/${id}`, integration)
+  }
+
+  const deleteThirdPartyIntegration = (id: number) => {
+    return api.delete(`/third-party-integrations/${id}`)
+  }
+
+  const updateThirdPartyAIAccess = (id: number, aiAccessible: boolean) => {
+    return api.put(`/third-party-integrations/${id}/ai-access`, { aiAccessible })
+  }
+
+  const testThirdPartyConnection = (id: number) => {
+    return api.post(`/third-party-integrations/${id}/test-connection`)
+  }
+
+  const fetchThirdPartyItems = (id: number, itemType: string = 'PAGE') => {
+    return api.get(`/third-party-integrations/${id}/items`, { params: { itemType } })
+  }
+
+  const getBlacklistedItems = (id: number) => {
+    return api.get(`/third-party-integrations/${id}/blacklist`)
+  }
+
+  const addToBlacklist = (id: number, item: any) => {
+    return api.post(`/third-party-integrations/${id}/blacklist`, item)
+  }
+
+  const bulkAddToBlacklist = (id: number, items: any[]) => {
+    return api.post(`/third-party-integrations/${id}/blacklist/bulk`, items)
+  }
+
+  const removeFromBlacklist = (id: number, itemId: string) => {
+    return api.delete(`/third-party-integrations/${id}/blacklist/${itemId}`)
+  }
+
+  const generateOAuthUrl = (request: any) => {
+    return api.post('/third-party-integrations/oauth/authorize', request)
+  }
+
+  const exchangeOAuthToken = (request: any) => {
+    return api.post('/third-party-integrations/oauth/token', request)
+  }
+
+  const getAvailableIntegrations = () => {
+    return api.get('/third-party-integrations/available')
+  }
+
+  const getOAuthAppConfig = (integrationType: string) => {
+    return api.get(`/third-party-integrations/oauth-config/${integrationType}`)
   }
 
   return {
@@ -275,7 +547,79 @@ export function useBackendApi() {
     // AI Configuration methods
     getAIConfiguration,
     updateAIConfiguration,
+    // AI Rule methods
+    getAllAIRules,
+    getAIRulesByCategory,
+    getAIRule,
+    createAIRule,
+    updateAIRule,
+    deleteAIRule,
+    reorderAIRules,
+    // Knowledge Base methods
+    getAllCategories,
+    getCategoryById,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    getAllArticles,
+    getActiveArticles,
+    getArticlesByCategory,
+    getArticleById,
+    createArticle,
+    updateArticle,
+    deleteArticle,
+    searchArticles,
     // Chatbot methods
-    createTicketFromChat
+    createTicketFromChat,
+    // Metadata methods
+    getAllMetadataConnections,
+    getActiveMetadataConnections,
+    getMetadataConnection,
+    createMetadataConnection,
+    updateMetadataConnection,
+    deleteMetadataConnection,
+    testMetadataConnection,
+    getMetadataMappings,
+    saveMetadataMappings,
+    createMetadataMapping,
+    updateMetadataMapping,
+    deleteMetadataMapping,
+    getAllMappingsForAIAccess,
+    updateAIAccess,
+    bulkUpdateAIAccess,
+    testMappingValue,
+    // Customer Profile methods
+    getCustomerProfileFields,
+    getAllCustomerProfileFields,
+    getCustomerProfileData,
+    createCustomerProfileField,
+    updateCustomerProfileField,
+    deleteCustomerProfileField,
+    // Ticket Fields methods
+    getAllTicketFields,
+    getTicketFieldsByLocation,
+    getTicketFieldData,
+    createTicketField,
+    updateTicketField,
+    deleteTicketField,
+    getAvailableMetadataVariables,
+    // Third Party Integration methods
+    getAllThirdPartyIntegrations,
+    getActiveThirdPartyIntegrations,
+    getThirdPartyIntegration,
+    createThirdPartyIntegration,
+    updateThirdPartyIntegration,
+    deleteThirdPartyIntegration,
+    updateThirdPartyAIAccess,
+    testThirdPartyConnection,
+    fetchThirdPartyItems,
+    getBlacklistedItems,
+    addToBlacklist,
+    bulkAddToBlacklist,
+    removeFromBlacklist,
+    generateOAuthUrl,
+    exchangeOAuthToken,
+    getAvailableIntegrations,
+    getOAuthAppConfig
   }
 }
