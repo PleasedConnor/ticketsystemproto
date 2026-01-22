@@ -10,7 +10,16 @@
           <span class="message-sender">{{ message.senderName }}</span>
           <span class="message-time">{{ formatTime(message.timestamp) }}</span>
         </div>
-        <div class="message-content">{{ message.text }}</div>
+        <div class="message-content" v-html="formatMessageWithActions(message.text, message.actions)"></div>
+        <div v-if="message.actions && Object.keys(message.actions).length > 0" class="message-actions">
+          <ChatbotActionRenderer 
+            v-for="(param, actionKey) in message.actions" 
+            :key="actionKey"
+            :action-key="actionKey"
+            :param="param"
+            @action-triggered="handleActionTriggered"
+          />
+        </div>
       </div>
       <div v-if="isLoading" class="message agent-message">
         <div class="message-content">
@@ -61,15 +70,25 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { useBackendApi } from '@/composables/useBackendApi'
+import ChatbotActionRenderer from './ChatbotActionRenderer.vue'
 
 const { generateChatbotResponse, createTicketFromChat } = useBackendApi()
 
 // State
-const messages = ref<Array<{ text: string; senderType: 'USER' | 'AGENT'; senderName: string; timestamp: Date }>>([])
+const messages = ref<Array<{ 
+  text: string; 
+  senderType: 'USER' | 'AGENT'; 
+  senderName: string; 
+  timestamp: Date;
+  actions?: Record<string, string>;
+}>>([])
 const inputMessage = ref('')
 const isLoading = ref(false)
 const chatEnded = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+
+// Session variables storage (for this chat session only)
+const sessionVariables = ref<Record<string, any>>({})
 
 // Methods
 const sendMessage = async () => {
@@ -90,29 +109,37 @@ const sendMessage = async () => {
   // Get AI response
   isLoading.value = true
   try {
-    // Build conversation history from previous messages
-    // Reduced to last 4 messages to prevent context confusion
+    // Build conversation history from previous messages in THIS chat session only
+    // Exclude the current user message (which was just added) - only include messages BEFORE it
+    // This helps the AI understand what has already happened vs what is happening now
     const conversationHistory = messages.value
-      .slice(-4) // Last 4 messages for context (reduced to prevent confusion)
-      .map(msg => `${msg.senderName}: ${msg.text}`)
+      .slice(0, -1) // Exclude the current user message that was just added
+      .slice(-4) // Last 4 messages for context (before the current message)
+      .map(msg => `${msg.senderType === 'USER' ? 'User' : 'Agent'}: ${msg.text}`)
       .join('\n')
     
-    const response = await generateChatbotResponse(messageText, conversationHistory)
+    console.log('Sending message with conversation history:', conversationHistory.substring(0, 200))
+    const response = await generateChatbotResponse(messageText, conversationHistory, false)
+    console.log('Received response:', response.data)
     
-    // Add AI response
+    // Add AI response with actions
     if (response.data && response.data.response) {
+      console.log('Response actions:', response.data.actions)
+      console.log('Response text:', response.data.response)
       messages.value.push({
         text: response.data.response,
         senderType: 'AGENT',
         senderName: 'AI Agent',
-        timestamp: new Date()
+        timestamp: new Date(),
+        actions: response.data.actions || {}
       })
     } else {
       messages.value.push({
         text: 'I apologize, but I encountered an error processing your message. Please try again.',
         senderType: 'AGENT',
         senderName: 'AI Agent',
-        timestamp: new Date()
+        timestamp: new Date(),
+        actions: {}
       })
     }
   } catch (error) {
@@ -129,12 +156,205 @@ const sendMessage = async () => {
   }
 }
 
+// Send a message silently (without showing it to the user) - used for action-triggered messages
+const sendMessageSilently = async (messageText: string) => {
+  if (!messageText || isLoading.value || chatEnded.value) return
+
+  // Don't add user message to the chat - this is a background action
+  // Just get the AI response directly
+  
+  isLoading.value = true
+  try {
+    // Build conversation history from visible messages (excluding the silent action message)
+    const conversationHistory = messages.value
+      .slice(-4)
+      .map(msg => `${msg.senderName}: ${msg.text}`)
+      .join('\n')
+    
+    console.log('Sending silent action message:', messageText)
+    const response = await generateChatbotResponse(messageText, conversationHistory, true) // Pass flag for action-triggered
+    
+    // Add AI response with actions (but actions will be suppressed by backend)
+    if (response.data && response.data.response) {
+      console.log('Silent action response:', response.data)
+      messages.value.push({
+        text: response.data.response,
+        senderType: 'AGENT',
+        senderName: 'AI Agent',
+        timestamp: new Date(),
+        actions: response.data.actions || {} // Should be empty due to suppression
+      })
+    }
+  } catch (error) {
+    console.error('Failed to get AI response for action:', error)
+    messages.value.push({
+      text: 'I encountered an error processing that action. Please try again.',
+      senderType: 'AGENT',
+      senderName: 'AI Agent',
+      timestamp: new Date()
+    })
+  } finally {
+    isLoading.value = false
+    scrollToBottom()
+  }
+}
+
+const handleActionTriggered = async (data: { type: string; message?: string; context?: any; metadata?: Record<string, any> }) => {
+  console.log('Action triggered:', data)
+  
+  switch (data.type) {
+    case 'ENGAGE_AI':
+      // Send the AI prompt silently in the background without showing it to the user
+      if (data.message) {
+        await sendMessageSilently(data.message)
+      }
+      break
+      
+    case 'SEND_MESSAGE':
+      // Send a predefined message
+      if (data.message) {
+        inputMessage.value = data.message
+        await sendMessage()
+      }
+      break
+      
+    case 'CONFIRM_NAME':
+      // Extract name from conversation history and save it
+      const nameFromConversation = extractNameFromConversation()
+      if (nameFromConversation) {
+        sessionVariables.value['user.name'] = nameFromConversation
+        console.log(`Saved name from conversation: ${nameFromConversation}`)
+        messages.value.push({
+          text: `✓ Name confirmed and saved: ${nameFromConversation}`,
+          senderType: 'AGENT',
+          senderName: 'System',
+          timestamp: new Date()
+        })
+        scrollToBottom()
+      } else {
+        messages.value.push({
+          text: `⚠ Could not find name in conversation. Please provide your name again.`,
+          senderType: 'AGENT',
+          senderName: 'System',
+          timestamp: new Date()
+        })
+        scrollToBottom()
+      }
+      break
+      
+    case 'UPDATE_METADATA':
+      // Save metadata to session variables (for this chat session only)
+      console.log('Updating metadata:', data.metadata)
+      if (data.metadata) {
+        // Store each metadata variable in session storage
+        Object.entries(data.metadata).forEach(([key, value]) => {
+          // Handle variable format like "{{user.name}}" or just "user.name"
+          let varKey = key
+          if (varKey.startsWith('{{') && varKey.endsWith('}}')) {
+            varKey = varKey.slice(2, -2) // Remove {{ and }}
+          }
+          sessionVariables.value[varKey] = value
+          console.log(`Saved session variable: ${varKey} = ${value}`)
+        })
+        
+        // Show confirmation message
+        const metadataStr = Object.entries(data.metadata)
+          .map(([key, value]) => {
+            let varKey = key
+            if (varKey.startsWith('{{') && varKey.endsWith('}}')) {
+              varKey = varKey.slice(2, -2)
+            }
+            return `${varKey}: ${value}`
+          })
+          .join(', ')
+        messages.value.push({
+          text: `✓ Saved: ${metadataStr}`,
+          senderType: 'AGENT',
+          senderName: 'System',
+          timestamp: new Date()
+        })
+        scrollToBottom()
+      }
+      break
+      
+    case 'TRIGGER_WEBHOOK':
+      // TODO: Make webhook API call
+      console.log('Triggering webhook:', data.context)
+      // For now, just show a message
+      messages.value.push({
+        text: `Webhook triggered: ${data.context?.url || 'Unknown URL'}`,
+        senderType: 'AGENT',
+        senderName: 'System',
+        timestamp: new Date()
+      })
+      scrollToBottom()
+      break
+      
+    case 'CUSTOM_SCRIPT':
+      // TODO: Execute custom script
+      console.log('Executing custom script:', data.context)
+      messages.value.push({
+        text: 'Custom script executed',
+        senderType: 'AGENT',
+        senderName: 'System',
+        timestamp: new Date()
+      })
+      scrollToBottom()
+      break
+      
+    default:
+      console.warn('Unknown action type:', data.type)
+  }
+}
+
 const scrollToBottom = () => {
   nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   })
+}
+
+const extractNameFromConversation = (): string | null => {
+  // Look through recent user messages to find a name
+  // Check last 5 user messages
+  const userMessages = messages.value
+    .filter(msg => msg.senderType === 'USER')
+    .slice(-5)
+    .reverse()
+  
+  for (const msg of userMessages) {
+    const text = msg.text.trim()
+    // Try to match name patterns
+    const nameMatch = text.match(/^(?:my name is|i'm|i am|this is|it's|it is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i)
+    if (nameMatch) {
+      return nameMatch[1]
+    }
+    // If message is short and looks like a name (2-3 words, capitalized)
+    if (text.length < 30 && /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?$/.test(text)) {
+      return text
+    }
+  }
+  
+  // Also check if we already extracted and stored it
+  if (sessionVariables.value['user.name']) {
+    return sessionVariables.value['user.name']
+  }
+  
+  return null
+}
+
+const formatMessageWithActions = (text: string, actions: Record<string, string> | undefined) => {
+  if (!text) return ''
+  if (!actions || Object.keys(actions).length === 0) return text
+  
+  // Replace action placeholders with empty string in the text (they're rendered separately)
+  let formatted = text
+  for (const actionKey in actions) {
+    const placeholder = `{action_${actionKey}}`
+    formatted = formatted.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), '')
+  }
+  return formatted.trim()
 }
 
 const formatTime = (date: Date) => {
@@ -187,6 +407,7 @@ const startNewChat = () => {
   messages.value = []
   inputMessage.value = ''
   chatEnded.value = false
+  console.log('Started new chat - conversation history cleared')
 }
 
 // Auto-scroll on new messages

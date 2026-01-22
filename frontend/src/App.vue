@@ -49,9 +49,24 @@
                   </RouterLink>
                 </div>
               </div>
-              <RouterLink to="/chatbot" class="nav-link nav-submenu-link">
-                <span>Chatbot</span>
-              </RouterLink>
+              <div class="nav-subgroup">
+                <div 
+                  class="nav-link nav-submenu-link nav-subgroup-header"
+                  :class="{ 'nav-group-active': route.name === 'chatbot' || route.name === 'chatbot-actions' }"
+                  @click.stop="chatbotExpanded = !chatbotExpanded"
+                >
+                  <span>Chatbot</span>
+                  <span class="nav-group-arrow" :class="{ 'expanded': chatbotExpanded }">▼</span>
+                </div>
+                <div v-if="chatbotExpanded" class="nav-submenu-level2">
+                  <RouterLink to="/chatbot" class="nav-link nav-submenu-link nav-submenu-level2-link">
+                    <span>End User Chatbot</span>
+                  </RouterLink>
+                  <RouterLink to="/chatbot/actions" class="nav-link nav-submenu-link nav-submenu-level2-link">
+                    <span>Actions</span>
+                  </RouterLink>
+                </div>
+              </div>
             </div>
           </div>
           <RouterLink to="/knowledge-base" class="nav-link">
@@ -102,12 +117,13 @@ import { RouterLink, RouterView, useRoute } from 'vue-router'
 const route = useRoute()
 const aiExpanded = ref(false)
 const aiConfigExpanded = ref(false)
+const chatbotExpanded = ref(false)
 const metadataExpanded = ref(false)
 
 // Check if current route is an AI route
 const isAIRoute = (routeName: string | null): boolean => {
   if (!routeName) return false
-  const aiRoutes = ['simulation', 'ai-customisation', 'ai-data-access', 'chatbot']
+  const aiRoutes = ['simulation', 'ai-customisation', 'ai-data-access', 'chatbot', 'chatbot-actions']
   return aiRoutes.includes(routeName)
 }
 
@@ -127,6 +143,11 @@ const checkActiveMenus = () => {
   const aiConfigRoutes = ['ai-customisation', 'ai-data-access']
   if (aiConfigRoutes.includes(route.name as string)) {
     aiConfigExpanded.value = true
+  }
+  // Auto-expand Chatbot submenu if on one of its pages
+  const chatbotRoutes = ['chatbot', 'chatbot-actions']
+  if (chatbotRoutes.includes(route.name as string)) {
+    chatbotExpanded.value = true
   }
   // Auto-expand Metadata submenu if on one of its pages
   if (isMetadataRoute(route.name as string)) {

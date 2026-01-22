@@ -114,8 +114,37 @@ export function useBackendApi() {
     return api.post<{score: number, label: string}>('/ai/sentiment', { text: message })
   }
 
-  const generateChatbotResponse = (message: string, conversationHistory: string) => {
-    return api.post<{response: string}>('/ai/chatbot/response', { message, conversationHistory })
+  const generateChatbotResponse = (message: string, conversationHistory: string, isActionTriggered: boolean = false) => {
+    return api.post<{response: string, actions: Record<string, string>}>('/ai/chatbot/response', { 
+      message, 
+      conversationHistory,
+      isActionTriggered 
+    })
+  }
+
+  // Chatbot Action API methods
+  const getAllChatbotActions = () => {
+    return api.get('/chatbot-actions')
+  }
+
+  const getActiveChatbotActions = () => {
+    return api.get('/chatbot-actions/active')
+  }
+
+  const getChatbotAction = (id: number) => {
+    return api.get(`/chatbot-actions/${id}`)
+  }
+
+  const createChatbotAction = (action: any) => {
+    return api.post('/chatbot-actions', action)
+  }
+
+  const updateChatbotAction = (id: number, action: any) => {
+    return api.put(`/chatbot-actions/${id}`, action)
+  }
+
+  const deleteChatbotAction = (id: number) => {
+    return api.delete(`/chatbot-actions/${id}`)
   }
 
   // User API methods
@@ -620,6 +649,13 @@ export function useBackendApi() {
     generateOAuthUrl,
     exchangeOAuthToken,
     getAvailableIntegrations,
-    getOAuthAppConfig
+    getOAuthAppConfig,
+    // Chatbot Actions
+    getAllChatbotActions,
+    getActiveChatbotActions,
+    getChatbotAction,
+    createChatbotAction,
+    updateChatbotAction,
+    deleteChatbotAction
   }
 }

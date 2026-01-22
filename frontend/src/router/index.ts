@@ -45,6 +45,11 @@ const router = createRouter({
       component: () => import('../views/ChatbotView.vue')
     },
     {
+      path: '/chatbot/actions',
+      name: 'chatbot-actions',
+      component: () => import('../views/ChatbotActionsView.vue')
+    },
+    {
       path: '/knowledge-base',
       name: 'knowledge-base',
       component: () => import('../views/KnowledgeBaseView.vue')

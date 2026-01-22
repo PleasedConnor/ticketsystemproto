@@ -422,7 +422,13 @@ public class MetadataService {
             
             return rawValue.toString();
         } catch (Exception e) {
-            System.err.println("Failed to fetch mapped value for " + internalVariable + ": " + e.getMessage());
+            System.err.println("=== ERROR FETCHING MAPPED VALUE ===");
+            System.err.println("Variable: " + internalVariable);
+            System.err.println("Ticket: " + (ticket != null ? ticket.getId() : "null"));
+            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error class: " + e.getClass().getName());
+            e.printStackTrace();
+            System.err.println("=== END ERROR ===");
             return null;
         }
     }
@@ -432,6 +438,11 @@ public class MetadataService {
      * Ensures user can only access their own data
      */
     private Map<String, Object> fetchUserData(MetadataConnection connection, com.prototype.entity.Ticket ticket) {
+        if (ticket == null) {
+            System.err.println("WARNING: fetchUserData called with null ticket for connection: " + 
+                (connection != null ? connection.getName() : "null"));
+            return null;
+        }
         try {
             // Build dynamic endpoint with user context
             String dynamicEndpoint = buildDynamicEndpoint(connection.getApiEndpoint(), ticket);

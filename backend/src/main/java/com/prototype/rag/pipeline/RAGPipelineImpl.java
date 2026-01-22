@@ -34,8 +34,11 @@ public class RAGPipelineImpl implements RAGPipeline {
         List<DocumentChunk> chunks = getRetrievedChunks(query, maxChunks, category);
         
         if (chunks.isEmpty()) {
+            System.out.println("RAGPipeline: No relevant chunks found for query: '" + query + "' - returning null to avoid irrelevant context");
             return null;
         }
+        
+        System.out.println("RAGPipeline: Found " + chunks.size() + " relevant chunks for query: '" + query + "'");
         
         // Build formatted context
         StringBuilder context = new StringBuilder();

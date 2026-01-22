@@ -47,6 +47,9 @@ public class AIService {
     @Autowired(required = false)
     private com.prototype.service.AIRuleService airuleService;
     
+    @Autowired(required = false)
+    private com.prototype.service.ChatbotActionService chatbotActionService;
+    
     @Autowired
     private KnowledgeBaseService knowledgeBaseService;
     
@@ -397,8 +400,9 @@ public class AIService {
     
     /**
      * Generate AI agent response for chatbot - acts as a customer service agent
+     * @param isActionTriggered If true, suppress actions in response to prevent loops
      */
-    public String generateAgentResponseForChatbot(String customerMessage, String conversationHistory) {
+    public String generateAgentResponseForChatbot(String customerMessage, String conversationHistory, boolean isActionTriggered) {
         try {
             // Get AI configurations - try new rule-based system first, fall back to old system
             String configurationContext = "";
@@ -430,10 +434,11 @@ public class AIService {
             StringBuilder fullPrompt = new StringBuilder();
             
             // MINIMAL PROMPT STRUCTURE - Configuration is the ONLY source of behavior
-            // Process configuration to handle variables
+            // Process configuration to handle variables - NO hardcoded behavior
             String processedConfig = configurationContext;
             if (processedConfig != null && !processedConfig.trim().isEmpty()) {
-                // Replace {{user.name}} with instruction to check conversation or ask
+                // Replace {{user.name}} with placeholder so configuration can reference it
+                // The configuration rule itself will instruct what to do with this placeholder
                 processedConfig = processedConfig.replaceAll("\\{\\{user\\.name\\}\\}", 
                     isFirstMessage ? "[ASK_USER_FOR_NAME]" : "[CHECK_CONVERSATION_FOR_NAME_OR_ASK]");
             }
@@ -441,30 +446,87 @@ public class AIService {
             // Build the simplest possible prompt
             fullPrompt.append("You are a customer service agent.\n\n");
             
-            // Add configuration rules - this is the ONLY behavior definition
+            // Add configuration rules FIRST - this is the ONLY behavior definition
+            // NO hardcoded instructions - the configuration itself contains all behavior
             if (processedConfig != null && !processedConfig.trim().isEmpty()) {
-                fullPrompt.append("Follow these rules exactly:\n");
-                fullPrompt.append(processedConfig).append("\n\n");
-            }
-            
-            // Variable handling - simple and direct
-            if (processedConfig != null && processedConfig.contains("NAME")) {
-                fullPrompt.append("For [ASK_USER_FOR_NAME] or [CHECK_CONVERSATION_FOR_NAME_OR_ASK]: ");
-                if (isFirstMessage) {
-                    fullPrompt.append("Ask the user for their name.\n");
-                } else {
-                    fullPrompt.append("Check the conversation below. If name is mentioned, use it. If not, ask for it.\n");
+                fullPrompt.append("=== CONFIGURATION RULES (MANDATORY - FOLLOW EXACTLY) ===\n");
+                fullPrompt.append("The following rules are defined in the platform configuration. ");
+                fullPrompt.append("These are MANDATORY instructions that you must follow exactly:\n\n");
+                fullPrompt.append(processedConfig).append("\n");
+                fullPrompt.append("=== END CONFIGURATION RULES ===\n\n");
+                
+                // Only explain placeholders if they exist in the config - no hardcoded behavior
+                if (processedConfig.contains("ASK_USER_FOR_NAME") || processedConfig.contains("CHECK_CONVERSATION_FOR_NAME_OR_ASK")) {
+                    fullPrompt.append("NOTE: [ASK_USER_FOR_NAME] means ask the user for their name. ");
+                    fullPrompt.append("[CHECK_CONVERSATION_FOR_NAME_OR_ASK] means check conversation history for a name, and if not found, ask for it.\n\n");
                 }
             }
             
-            // Add conversation history if available
+            // Add available actions context (after configuration so rules can reference them)
+            if (chatbotActionService != null) {
+                try {
+                    List<com.prototype.entity.ChatbotAction> availableActions = chatbotActionService.getActiveActions();
+                    if (!availableActions.isEmpty()) {
+                        fullPrompt.append("=== AVAILABLE ACTIONS ===\n");
+                        fullPrompt.append("You can display interactive components by including action placeholders in your response.\n");
+                        fullPrompt.append("Available actions:\n");
+                        for (com.prototype.entity.ChatbotAction action : availableActions) {
+                            fullPrompt.append("- {action_").append(action.getActionKey()).append("} - ").append(action.getName());
+                            if (action.getDescription() != null && !action.getDescription().trim().isEmpty()) {
+                                fullPrompt.append(": ").append(action.getDescription());
+                            }
+                            fullPrompt.append("\n");
+                        }
+                        fullPrompt.append("\n");
+                        fullPrompt.append("CRITICAL ACTION DISPLAY RULES:\n");
+                        fullPrompt.append("1. If the configuration rules mention displaying an action (e.g., 'display {action_Confirmation}'), ");
+                        fullPrompt.append("you MUST include that exact action placeholder in your response text.\n");
+                        fullPrompt.append("2. Use the EXACT placeholder format as shown in the rules (e.g., {action_Confirmation} or {action_order_selector}).\n");
+                        fullPrompt.append("3. CRITICAL TIMING RULE: If the rules say 'WAIT FOR USER TO MESSAGE', 'once user provides', or 'after user provides', ");
+                        fullPrompt.append("this means:\n");
+                        fullPrompt.append("   - DO NOT display the action in the same response where you ask for information\n");
+                        fullPrompt.append("   - ONLY display the action AFTER the user has provided the information in a SUBSEQUENT message\n");
+                        fullPrompt.append("   - Check the conversation history above - if the user has ALREADY provided the information in a previous message, THEN display the action\n");
+                        fullPrompt.append("   - If you are asking for information in your current response, DO NOT include any actions\n");
+                        fullPrompt.append("4. STRICT ACTION TRIGGERING RULE - THIS IS CRITICAL:\n");
+                        fullPrompt.append("   - Actions must ONLY be displayed when BOTH conditions are met:\n");
+                        fullPrompt.append("     a) The configuration rules explicitly mention displaying that SPECIFIC action\n");
+                        fullPrompt.append("     b) The user's current message ACTUALLY matches the condition in the rule\n");
+                        fullPrompt.append("   - Example: If a rule says 'If a user asks about an order then display {action_order_selector}', ");
+                        fullPrompt.append("you can ONLY display {action_order_selector} if the user ACTUALLY asked about an order.\n");
+                        fullPrompt.append("   - If the user said 'My name is John', they did NOT ask about an order, so DO NOT display {action_order_selector}.\n");
+                        fullPrompt.append("   - DO NOT display actions proactively, preemptively, or 'just in case'.\n");
+                        fullPrompt.append("   - DO NOT display actions that are available but not relevant to the current conversation.\n");
+                        fullPrompt.append("   - DO NOT add actions to responses unless the user's message explicitly triggers the rule condition.\n");
+                        fullPrompt.append("5. If the rules mention an action but say to wait, check the conversation history first:\n");
+                        fullPrompt.append("   - If the user has NOT yet provided the required information, ask for it WITHOUT displaying the action\n");
+                        fullPrompt.append("   - If the user HAS provided the required information in a previous message, THEN display the action\n");
+                        fullPrompt.append("6. FINAL CHECK: Before including any action placeholder, ask yourself:\n");
+                        fullPrompt.append("   - Does the configuration rule explicitly say to display this action?\n");
+                        fullPrompt.append("   - Does the user's current message match the condition in that rule?\n");
+                        fullPrompt.append("   - If either answer is NO, DO NOT include the action.\n\n");
+                    }
+                } catch (Exception e) {
+                    System.err.println("Failed to load chatbot actions: " + e.getMessage());
+                }
+            }
+            
+            // Add conversation history if available (only from current session)
             if (!isFirstMessage && conversationHistory != null && !conversationHistory.trim().isEmpty()) {
-                fullPrompt.append("Previous conversation:\n");
+                fullPrompt.append("Previous conversation in this chat session:\n");
                 fullPrompt.append(conversationHistory).append("\n\n");
+                fullPrompt.append("IMPORTANT: Only reference the conversation above. Do not reference any other conversations or previous sessions.\n\n");
             }
             
             // Add current customer message
-            fullPrompt.append("Customer message: ").append(customerMessage).append("\n\n");
+            fullPrompt.append("Current customer message (this is what the user just sent): ").append(customerMessage).append("\n\n");
+            
+            // Add explicit instruction about timing
+            fullPrompt.append("TIMING INSTRUCTION: The 'Current customer message' above is what the user JUST sent. ");
+            fullPrompt.append("The 'Previous conversation' above shows what happened BEFORE this message. ");
+            fullPrompt.append("If the rules say to wait for the user to provide information, check if that information is in the 'Current customer message' or 'Previous conversation'. ");
+            fullPrompt.append("If the information is in the 'Current customer message', you can display the action NOW. ");
+            fullPrompt.append("If the information is NOT yet provided, ask for it WITHOUT displaying the action.\n\n");
             
             // RAG: Retrieve relevant articles from knowledge base (if needed)
             String knowledgeBaseContext = getKnowledgeBaseContext(customerMessage);
@@ -476,8 +538,16 @@ public class AIService {
             // Extract formatting instructions for post-processing
             String formattingInstructions = extractFormattingInstructions(configurationContext);
             
-            // Final instruction - simple and direct
-            fullPrompt.append("Respond as a customer service agent following the rules above:");
+            // Final instruction - minimal, let configuration drive behavior
+            fullPrompt.append("Respond as a customer service agent following the configuration rules above.\n");
+            
+            // If this is an action-triggered message, suppress actions to prevent loops
+            if (isActionTriggered) {
+                fullPrompt.append("NOTE: This message was triggered by a user action. ");
+                fullPrompt.append("Do NOT include any action placeholders in your response.\n");
+            }
+            
+            fullPrompt.append("Your response:");
             
             // Log the full prompt for debugging
             System.out.println("=== FULL PROMPT FOR AI ===");
@@ -511,18 +581,140 @@ public class AIService {
             // Clean up the response
             aiResponse = cleanAgentResponse(aiResponse);
             
-            // Remove any variable syntax that slipped through
-            aiResponse = aiResponse.replaceAll("\\{\\{[^}]+\\}\\}", "").trim();
-            aiResponse = aiResponse.replaceAll("\\[.*?PLACEHOLDER.*?\\]", "").trim();
-            aiResponse = aiResponse.replaceAll("\\[ASK_USER_FOR_NAME\\]", "").trim();
-            aiResponse = aiResponse.replaceAll("\\[CHECK_CONVERSATION_FOR_NAME_OR_ASK\\]", "").trim();
+            // Log action placeholders before cleaning
+            Map<String, String> detectedActions = extractActionPlaceholders(aiResponse);
+            if (!detectedActions.isEmpty()) {
+                System.out.println("=== DETECTED ACTION PLACEHOLDERS ===");
+                System.out.println("WARNING: Actions were detected in AI response, but they should only appear if explicitly mentioned in rules!");
+                System.out.println("Customer message: " + customerMessage);
+                System.out.println("Is action-triggered: " + isActionTriggered);
+                for (Map.Entry<String, String> entry : detectedActions.entrySet()) {
+                    System.out.println("Action: " + entry.getKey() + " (param: " + entry.getValue() + ")");
+                }
+                System.out.println("=== END ACTIONS ===");
+            } else {
+                System.out.println("=== NO ACTIONS DETECTED ===");
+                System.out.println("AI response does not contain any action placeholders (this is correct if rules don't mention actions)");
+            }
+            
+            // Remove any variable syntax that slipped through (but preserve action placeholders)
+            // Action placeholders use {action_key} format (single braces), so we need to preserve them
+            // First, temporarily replace action placeholders
+            Map<String, String> actionPlaceholders = new HashMap<>();
+            java.util.regex.Pattern actionPattern = java.util.regex.Pattern.compile("\\{action_([a-zA-Z0-9_]+)(?::([^}]+))?\\}");
+            java.util.regex.Matcher actionMatcher = actionPattern.matcher(aiResponse);
+            StringBuffer actionBuffer = new StringBuffer();
+            int actionIndex = 0;
+            while (actionMatcher.find()) {
+                String placeholder = actionMatcher.group(0);
+                String tempKey = "___ACTION_PLACEHOLDER_" + actionIndex + "___";
+                actionPlaceholders.put(tempKey, placeholder);
+                actionMatcher.appendReplacement(actionBuffer, tempKey);
+                actionIndex++;
+            }
+            actionMatcher.appendTail(actionBuffer);
+            String tempResponse = actionBuffer.toString();
+            
+            // Now remove variable syntax
+            tempResponse = tempResponse.replaceAll("\\{\\{[^}]+\\}\\}", "").trim();
+            tempResponse = tempResponse.replaceAll("\\[.*?PLACEHOLDER.*?\\]", "").trim();
+            tempResponse = tempResponse.replaceAll("\\[ASK_USER_FOR_NAME\\]", "").trim();
+            tempResponse = tempResponse.replaceAll("\\[CHECK_CONVERSATION_FOR_NAME_OR_ASK\\]", "").trim();
+            
+            // Restore action placeholders
+            for (Map.Entry<String, String> entry : actionPlaceholders.entrySet()) {
+                tempResponse = tempResponse.replace(entry.getKey(), entry.getValue());
+            }
+            aiResponse = tempResponse;
             
             // Remove meta-commentary about instructions/prompts
             aiResponse = aiResponse.replaceAll("(?i)(I notice|I see|the prompt|the instruction|the system|I will ignore|I'll ignore|to clarify|Here's my response:).*?\\n", "");
             aiResponse = aiResponse.replaceAll("(?i)However, I notice.*?\\.", "");
             
-            // Clean up any double spaces or empty lines
-            aiResponse = aiResponse.replaceAll("\\s+", " ").trim();
+            // Clean up any double spaces or empty lines (but preserve newlines from formatting)
+            // Only collapse multiple spaces, not newlines
+            aiResponse = aiResponse.replaceAll("[ ]+", " ").trim();
+            
+            // CRITICAL: Remove actions if the AI is asking for information
+            // This is a safety check to prevent actions from appearing when asking questions
+            // BUT: Don't remove confirmation actions if user has already provided the information
+            if (isAskingForInformation(aiResponse, customerMessage, conversationHistory)) {
+                System.out.println("=== DETECTED: AI is asking for information - checking if actions should be removed ===");
+                Map<String, String> actionsToRemove = extractActionPlaceholders(aiResponse);
+                if (!actionsToRemove.isEmpty()) {
+                    // Check if user has already provided information (e.g., name) and action is for confirmation
+                    // In this case, the confirmation action IS the way to confirm, so we should keep it
+                    List<String> actionsToKeep = new java.util.ArrayList<>();
+                    for (String actionKey : actionsToRemove.keySet()) {
+                        String lowerActionKey = actionKey.toLowerCase();
+                        // If it's a confirmation action and user has provided their name, keep it
+                        if (lowerActionKey.contains("confirm")) {
+                            // Check if user message or history contains name-like information
+                            String lowerCustomerMessage = customerMessage != null ? customerMessage.toLowerCase() : "";
+                            String lowerHistory = conversationHistory != null ? conversationHistory.toLowerCase() : "";
+                            boolean hasNameInfo = lowerCustomerMessage.contains("name is") || 
+                                                 lowerCustomerMessage.contains("i'm") ||
+                                                 lowerCustomerMessage.contains("i am") ||
+                                                 lowerHistory.contains("name is") ||
+                                                 lowerHistory.contains("i'm") ||
+                                                 lowerHistory.contains("i am");
+                            if (hasNameInfo) {
+                                System.out.println("Keeping confirmation action - user has provided name information");
+                                actionsToKeep.add(actionKey);
+                            }
+                        }
+                    }
+                    
+                    // Remove actions that should be removed (exclude ones we're keeping)
+                    List<String> finalActionsToRemove = new java.util.ArrayList<>();
+                    for (String actionKey : actionsToRemove.keySet()) {
+                        if (!actionsToKeep.contains(actionKey)) {
+                            finalActionsToRemove.add(actionKey);
+                        }
+                    }
+                    
+                    if (!finalActionsToRemove.isEmpty()) {
+                        System.out.println("Removing actions: " + finalActionsToRemove);
+                        // Remove action placeholders from the response
+                        for (String actionKey : finalActionsToRemove) {
+                            aiResponse = aiResponse.replaceAll("\\{action_" + actionKey + "(?::[^}]+)?\\}", "").trim();
+                        }
+                        aiResponse = aiResponse.replaceAll("[ ]+", " ").trim();
+                        System.out.println("Response after removing actions: " + aiResponse);
+                    } else {
+                        System.out.println("All actions are confirmation actions with user info provided - keeping them");
+                    }
+                }
+            }
+            
+            // CRITICAL: Remove actions that don't match the user's message context
+            // This prevents actions from appearing when they're not relevant
+            Map<String, String> contextActions = extractActionPlaceholders(aiResponse);
+            if (!contextActions.isEmpty() && customerMessage != null && !customerMessage.trim().isEmpty()) {
+                String lowerCustomerMessage = customerMessage.toLowerCase();
+                List<String> actionsToRemove = new java.util.ArrayList<>();
+                
+                for (String actionKey : contextActions.keySet()) {
+                    // Check if action matches user's message context
+                    boolean shouldKeep = isActionRelevantToMessage(actionKey, lowerCustomerMessage, conversationHistory);
+                    if (!shouldKeep) {
+                        actionsToRemove.add(actionKey);
+                        System.out.println("=== REMOVING IRRELEVANT ACTION ===");
+                        System.out.println("Action: " + actionKey);
+                        System.out.println("User message: " + customerMessage);
+                        System.out.println("Reason: Action does not match user's message context");
+                    }
+                }
+                
+                // Remove irrelevant actions
+                if (!actionsToRemove.isEmpty()) {
+                    for (String actionKey : actionsToRemove) {
+                        aiResponse = aiResponse.replaceAll("\\{action_" + actionKey + "(?::[^}]+)?\\}", "").trim();
+                    }
+                    aiResponse = aiResponse.replaceAll("[ ]+", " ").trim();
+                    System.out.println("Response after removing irrelevant actions: " + aiResponse);
+                }
+            }
             
             // Apply formatting rules post-processing to ensure they're followed
             // This MUST happen after cleaning to preserve the formatting
@@ -532,12 +724,29 @@ public class AIService {
                 System.out.println("Formatted response: " + aiResponse.replace("\n", "\\n"));
             }
             
+            // Final check: Log if action placeholders are still present
+            Map<String, String> finalActions = extractActionPlaceholders(aiResponse);
+            if (!finalActions.isEmpty()) {
+                System.out.println("=== FINAL ACTION CHECK ===");
+                System.out.println("Actions still in response: " + finalActions.keySet());
+                System.out.println("Response text: " + aiResponse);
+                System.out.println("These actions will be sent to frontend for rendering");
+            } else {
+                System.out.println("=== FINAL ACTION CHECK ===");
+                System.out.println("No action placeholders found in final response");
+                System.out.println("Response text: " + aiResponse);
+                System.out.println("If configuration mentioned an action, the AI may not have included it");
+            }
+            
             System.out.println("Generated AI agent response for chatbot: " + aiResponse);
             return aiResponse;
             
         } catch (Exception e) {
-            System.err.println("Failed to generate chatbot response: " + e.getMessage());
+            System.err.println("=== ERROR GENERATING CHATBOT RESPONSE ===");
+            System.err.println("Error message: " + e.getMessage());
+            System.err.println("Error class: " + e.getClass().getName());
             e.printStackTrace();
+            System.err.println("=== END ERROR ===");
             return "Thank you for contacting us. I'm here to help you with your inquiry. Could you please provide more details so I can assist you better?";
         }
     }
@@ -579,22 +788,185 @@ public class AIService {
         }
         
         // Check if message contains question words or seems to be asking for information
-        String[] questionIndicators = {"what", "when", "where", "who", "why", "how", "which", "can you", "could you", "tell me", "explain", "help", "information", "about"};
+        String[] questionIndicators = {"what", "when", "where", "who", "why", "how", "which", "can you", "could you", "tell me", "explain", "help", "information", "about", "wondering", "wonder", "question"};
         boolean hasQuestionIndicator = false;
         for (String indicator : questionIndicators) {
             if (lowerMessage.contains(indicator)) {
                 hasQuestionIndicator = true;
+                System.out.println("RAG: Detected question indicator: '" + indicator + "' in message: '" + message + "'");
                 break;
             }
         }
         
+        // If message has question indicators, it's definitely not conversational - allow RAG
+        if (hasQuestionIndicator) {
+            System.out.println("RAG: Message contains question indicators - allowing knowledge base search");
+            return false; // NOT conversational, allow RAG
+        }
+        
         // If no question indicators and message is short, likely conversational
-        if (!hasQuestionIndicator && lowerMessage.length() < 30) {
-            System.out.println("RAG: No question indicators and message is short, likely conversational, skipping knowledge base search");
+        if (lowerMessage.length() < 30) {
+            System.out.println("RAG: No question indicators and message is short (" + lowerMessage.length() + " chars), likely conversational, skipping knowledge base search");
             return true;
         }
         
         return false;
+    }
+    
+    /**
+     * Check if the AI response is asking for information from the user
+     * This is used to prevent actions from appearing when the AI is asking questions
+     */
+    private boolean isAskingForInformation(String aiResponse, String customerMessage, String conversationHistory) {
+        if (aiResponse == null || aiResponse.trim().isEmpty()) {
+            return false;
+        }
+        
+        String lowerResponse = aiResponse.toLowerCase();
+        
+        // Patterns that indicate the AI is asking for information
+        String[] askingPatterns = {
+            "could you please",
+            "can you please",
+            "would you please",
+            "please tell me",
+            "please provide",
+            "please share",
+            "please let me know",
+            "could you tell me",
+            "can you tell me",
+            "would you tell me",
+            "tell me your",
+            "what is your",
+            "what's your",
+            "may i have",
+            "i need to know",
+            "i'd like to know",
+            "i would like to know",
+            "could you",
+            "can you",
+            "would you"
+        };
+        
+        // Check if response contains asking patterns
+        boolean containsAskingPattern = false;
+        for (String pattern : askingPatterns) {
+            if (lowerResponse.contains(pattern)) {
+                containsAskingPattern = true;
+                break;
+            }
+        }
+        
+        // Also check if the response ends with a question mark (strong indicator)
+        boolean endsWithQuestion = lowerResponse.trim().endsWith("?");
+        
+        // Check if the customer message doesn't contain the information being asked for
+        // (e.g., if AI asks for name, check if name is in customer message or history)
+        boolean informationNotProvided = true;
+        if (customerMessage != null && !customerMessage.trim().isEmpty()) {
+            String lowerCustomerMessage = customerMessage.toLowerCase();
+            // If customer message is very short or is a greeting, they likely haven't provided info yet
+            if (lowerCustomerMessage.length() < 20 || 
+                lowerCustomerMessage.matches("^(hi|hello|hey|greetings|good morning|good afternoon|good evening).*")) {
+                informationNotProvided = true;
+            } else {
+                // Check if response asks for name and customer message might contain a name
+                if (lowerResponse.contains("name") && lowerCustomerMessage.length() > 5) {
+                    // Check if customer message actually contains name information
+                    boolean hasNameInfo = lowerCustomerMessage.contains("name is") || 
+                                         lowerCustomerMessage.contains("i'm") ||
+                                         lowerCustomerMessage.contains("i am") ||
+                                         lowerCustomerMessage.contains("my name");
+                    if (hasNameInfo) {
+                        informationNotProvided = false; // User has provided name
+                    } else {
+                        informationNotProvided = true;
+                    }
+                } else if (lowerResponse.contains("confirm")) {
+                    // If AI is asking to confirm something, check if user has provided that information
+                    // Check conversation history too
+                    String lowerHistory = conversationHistory != null ? conversationHistory.toLowerCase() : "";
+                    boolean hasInfoToConfirm = lowerCustomerMessage.contains("name is") || 
+                                              lowerCustomerMessage.contains("i'm") ||
+                                              lowerCustomerMessage.contains("i am") ||
+                                              lowerCustomerMessage.contains("my name") ||
+                                              lowerHistory.contains("name is") ||
+                                              lowerHistory.contains("i'm") ||
+                                              lowerHistory.contains("i am");
+                    if (hasInfoToConfirm) {
+                        informationNotProvided = false; // User has provided info to confirm
+                    } else {
+                        informationNotProvided = true;
+                    }
+                } else {
+                    informationNotProvided = true;
+                }
+            }
+        }
+        
+        // If the AI is asking a question AND the information hasn't been provided, it's asking for information
+        boolean isAsking = (containsAskingPattern || endsWithQuestion) && informationNotProvided;
+        
+        if (isAsking) {
+            System.out.println("=== DETECTED: AI is asking for information ===");
+            System.out.println("Response: " + aiResponse.substring(0, Math.min(100, aiResponse.length())));
+            System.out.println("Contains asking pattern: " + containsAskingPattern);
+            System.out.println("Ends with question: " + endsWithQuestion);
+            System.out.println("Information not provided: " + informationNotProvided);
+        }
+        
+        return isAsking;
+    }
+    
+    /**
+     * Check if an action is relevant to the user's message
+     * This prevents actions from appearing when they don't match the conversation context
+     */
+    private boolean isActionRelevantToMessage(String actionKey, String lowerCustomerMessage, String conversationHistory) {
+        if (actionKey == null || lowerCustomerMessage == null) {
+            return true; // Default to keeping if we can't determine
+        }
+        
+        String lowerActionKey = actionKey.toLowerCase();
+        
+        // Define relevance rules for specific actions
+        // If action is order_selector, user message should mention order-related terms
+        if (lowerActionKey.contains("order")) {
+            String[] orderKeywords = {"order", "orders", "purchase", "bought", "buy", "transaction", "delivery", "shipping", "track"};
+            boolean hasOrderKeyword = false;
+            for (String keyword : orderKeywords) {
+                if (lowerCustomerMessage.contains(keyword)) {
+                    hasOrderKeyword = true;
+                    break;
+                }
+            }
+            if (!hasOrderKeyword && conversationHistory != null) {
+                // Check conversation history too
+                String lowerHistory = conversationHistory.toLowerCase();
+                for (String keyword : orderKeywords) {
+                    if (lowerHistory.contains(keyword)) {
+                        hasOrderKeyword = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasOrderKeyword) {
+                System.out.println("Action 'order_selector' is not relevant - user message doesn't mention orders");
+                return false;
+            }
+        }
+        
+        // For confirmation action, it's usually relevant when user provides information
+        // (name, email, etc.) - this is handled by the timing rules, so we allow it here
+        if (lowerActionKey.contains("confirm")) {
+            // Confirmation actions are typically triggered by configuration rules
+            // after user provides information, so we allow them
+            return true;
+        }
+        
+        // For other actions, be permissive but log for debugging
+        System.out.println("Action '" + actionKey + "' relevance check: allowing (no specific rule)");
+        return true;
     }
     
     /**
@@ -618,17 +990,19 @@ public class AIService {
             // Try semantic search first (if RAG pipeline is available)
             if (ragPipeline != null) {
                 try {
-                    // Retrieve more chunks (5 instead of 3) to get better context
+                    // Retrieve chunks with stricter similarity threshold (now 0.65)
                     String semanticContext = ragPipeline.retrieveContext(customerMessage, 5);
                     if (semanticContext != null && !semanticContext.trim().isEmpty()) {
-                        System.out.println("RAG: Using semantic search (embeddings)");
+                        System.out.println("RAG: Using semantic search (embeddings) - found relevant articles");
                         System.out.println("RAG: Generated context (length: " + semanticContext.length() + " chars)");
                         if (semanticContext.length() < 200) {
                             System.out.println("RAG: WARNING - Context is very short (" + semanticContext.length() + " chars). This might indicate indexing issues.");
                         }
                         return semanticContext;
                     } else {
-                        System.out.println("RAG: Semantic search returned empty context, falling back to keyword search");
+                        System.out.println("RAG: Semantic search found no highly relevant articles (similarity < 0.65) - skipping RAG to avoid irrelevant context");
+                        System.out.println("RAG: This is normal if the Knowledge Base doesn't contain information relevant to the query");
+                        return null; // Don't fall back to keyword search if semantic search found nothing relevant
                     }
                 } catch (Exception e) {
                     System.err.println("RAG: Semantic search failed, falling back to keyword search: " + e.getMessage());
@@ -915,6 +1289,29 @@ public class AIService {
     /**
      * Clean up agent response
      */
+    /**
+     * Extract action placeholders from AI response
+     * Returns a map of action keys found in the response
+     */
+    public Map<String, String> extractActionPlaceholders(String response) {
+        Map<String, String> actions = new HashMap<>();
+        // Pattern: {action_key} or {action_key:param}
+        // Case-insensitive matching to handle variations like {action_Confirmation} vs {action_confirmation}
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\{action_([a-zA-Z0-9_]+)(?::([^}]+))?\\}", java.util.regex.Pattern.CASE_INSENSITIVE);
+        java.util.regex.Matcher matcher = pattern.matcher(response);
+        
+        while (matcher.find()) {
+            String actionKey = matcher.group(1);
+            String param = matcher.group(2);
+            // Normalize to lowercase for consistency (action keys are case-sensitive in database)
+            // But we'll try both the original case and lowercase when looking up
+            actions.put(actionKey, param != null ? param : "");
+            System.out.println("Extracted action placeholder: " + actionKey + " (param: " + (param != null ? param : "none") + ")");
+        }
+        
+        return actions;
+    }
+    
     private String cleanAgentResponse(String response) {
         // Remove any unwanted prefixes or artifacts
         response = response.trim();

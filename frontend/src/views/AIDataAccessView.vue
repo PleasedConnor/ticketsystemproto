@@ -35,8 +35,20 @@
               <p>Loading available integrations...</p>
             </div>
             
+            <div v-else-if="Object.keys(availableIntegrations).length === 0" class="empty-state">
+              <p>No integrations available. Please check your connection.</p>
+              <button class="btn btn-secondary" @click="loadAvailableIntegrations">Retry Loading</button>
+            </div>
+            
             <div v-else class="available-integrations">
-              <div v-for="category in integrationCategories" :key="category.name" class="integration-category">
+              <template v-if="integrationCategories.length === 0">
+                <div class="empty-state">
+                  <p>No integration categories found. Check console for errors.</p>
+                  <button class="btn btn-secondary" @click="loadAvailableIntegrations">Retry Loading</button>
+                </div>
+              </template>
+              <template v-else>
+                <div v-for="category in integrationCategories" :key="category.name" class="integration-category">
                 <h3 class="category-header">{{ category.name }}</h3>
                 <div class="integrations-grid">
                   <div 
@@ -67,6 +79,7 @@
                   </div>
                 </div>
               </div>
+              </template>
             </div>
             
             <!-- Connected Integrations List -->
@@ -304,6 +317,7 @@
             
             <div v-else-if="dataPoints.length === 0" class="empty-state">
               <p>No data points found. Create mappings in Metadata Configuration first.</p>
+              <button class="btn btn-secondary" @click="loadDataPoints">Retry Loading</button>
             </div>
             
             <div v-else class="data-points-list">
@@ -663,7 +677,10 @@ const loadDataPoints = async () => {
     }))
   } catch (error) {
     console.error('Failed to load data points:', error)
-    alert('Failed to load data points. Please try again.')
+    // Don't block navigation - just log the error and show a non-blocking notification
+    console.warn('Data points could not be loaded, but you can still navigate')
+    // Set empty array to prevent further errors
+    dataPoints.value = []
   } finally {
     loading.value = false
   }
@@ -741,7 +758,10 @@ const loadIntegrations = async () => {
     integrations.value = response.data || []
   } catch (error) {
     console.error('Failed to load integrations:', error)
-    alert('Failed to load integrations. Please try again.')
+    // Don't block navigation - just log the error
+    console.warn('Integrations could not be loaded, but you can still navigate')
+    // Set empty array to prevent further errors
+    integrations.value = []
   } finally {
     loadingIntegrations.value = false
   }
@@ -808,9 +828,25 @@ const loadAvailableIntegrations = async () => {
   loadingAvailableIntegrations.value = true
   try {
     const response = await getAvailableIntegrations()
-    availableIntegrations.value = response.data || {}
-  } catch (error) {
+    console.log('Available integrations response:', response)
+    if (response && response.data) {
+      availableIntegrations.value = response.data
+      console.log('Loaded integrations:', Object.keys(availableIntegrations.value).length, 'integrations')
+    } else {
+      console.warn('No data in response:', response)
+      // Don't clear existing data if response is empty
+      if (Object.keys(availableIntegrations.value).length === 0) {
+        availableIntegrations.value = {}
+      }
+    }
+  } catch (error: any) {
     console.error('Failed to load available integrations:', error)
+    console.error('Error details:', error.response?.data || error.message)
+    // Don't clear existing data on error - keep what we have
+    if (Object.keys(availableIntegrations.value).length === 0) {
+      console.warn('No integrations loaded, but keeping empty state')
+      availableIntegrations.value = {}
+    }
   } finally {
     loadingAvailableIntegrations.value = false
   }
@@ -1155,10 +1191,21 @@ const removeItemFromBlacklist = async (item: any) => {
   }
 }
 
-onMounted(() => {
-  loadDataPoints()
-  loadIntegrations()
-  loadAvailableIntegrations()
+onMounted(async () => {
+  // Load data in parallel, but don't block on errors
+  // Load available integrations first (they're needed for the UI)
+  await loadAvailableIntegrations()
+  
+  // Then load the rest
+  try {
+    await Promise.allSettled([
+      loadDataPoints(),
+      loadIntegrations()
+    ])
+  } catch (error) {
+    console.error('Error loading initial data:', error)
+    // Don't block navigation - errors are handled in individual functions
+  }
   
   // Check for OAuth callback
   handleOAuthCallback()

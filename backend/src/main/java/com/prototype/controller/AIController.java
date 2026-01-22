@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Optional;
 
 @RestController
@@ -41,19 +42,44 @@ public class AIController {
      * Generate AI response for chatbot (no ticket required)
      */
     @PostMapping("/chatbot/response")
-    public ResponseEntity<Map<String, String>> generateChatbotResponse(
+    public ResponseEntity<Map<String, Object>> generateChatbotResponse(
             @RequestBody ChatbotRequest request) {
         try {
             String response = aiService.generateAgentResponseForChatbot(
                 request.getMessage(),
-                request.getConversationHistory()
+                request.getConversationHistory(),
+                request.getIsActionTriggered() // Pass flag to suppress actions
             );
-            return ResponseEntity.ok(Map.of("response", response));
+            
+            // Extract action placeholders from response
+            Map<String, String> actions = aiService.extractActionPlaceholders(response);
+            
+            // If this is an action-triggered message, suppress actions to prevent loops
+            if (request.getIsActionTriggered()) {
+                actions = new HashMap<>(); // Clear actions to prevent re-triggering
+                System.out.println("Action-triggered message detected - suppressing actions to prevent loop");
+            }
+            
+            // Keep action placeholders in the response text - frontend will handle rendering
+            // The actions map is provided separately for the frontend to know which actions to render
+            String cleanedResponse = response.trim();
+            
+            Map<String, Object> result = new HashMap<>();
+            result.put("response", cleanedResponse);
+            result.put("actions", actions);
+            
+            return ResponseEntity.ok(result);
         } catch (Exception e) {
-            System.err.println("Failed to generate chatbot response: " + e.getMessage());
+            System.err.println("=== ERROR IN CHATBOT CONTROLLER ===");
+            System.err.println("Error message: " + e.getMessage());
+            System.err.println("Error class: " + e.getClass().getName());
+            System.err.println("Request message: " + request.getMessage());
             e.printStackTrace();
-            return ResponseEntity.ok(Map.of("response", 
-                "I apologize, but I encountered an error. Please try again."));
+            System.err.println("=== END ERROR ===");
+            Map<String, Object> result = new HashMap<>();
+            result.put("response", "I apologize, but I encountered an error. Please try again.");
+            result.put("actions", new HashMap<>());
+            return ResponseEntity.ok(result);
         }
     }
     
@@ -132,11 +158,15 @@ public class AIController {
     public static class ChatbotRequest {
         private String message;
         private String conversationHistory;
+        private Boolean isActionTriggered = false; // Flag to indicate this is from an action, not a user message
         
         public String getMessage() { return message; }
         public void setMessage(String message) { this.message = message; }
         
         public String getConversationHistory() { return conversationHistory; }
         public void setConversationHistory(String conversationHistory) { this.conversationHistory = conversationHistory; }
+        
+        public Boolean getIsActionTriggered() { return isActionTriggered != null && isActionTriggered; }
+        public void setIsActionTriggered(Boolean isActionTriggered) { this.isActionTriggered = isActionTriggered; }
     }
 }

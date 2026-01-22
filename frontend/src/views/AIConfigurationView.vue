@@ -15,59 +15,105 @@
         </button>
       </header>
 
-      <!-- Template Variables Help - Hoverable & Clickable -->
-      <div class="variables-help-container">
-        <span 
-          class="variables-help-trigger"
-          :class="{ pinned: isVariablesPinned }"
-          @mouseenter="handleMouseEnter"
-          @mouseleave="handleMouseLeave"
-          @click="toggleVariablesPin"
-        >
-          📋 Available Template Variables
-          <span v-if="isVariablesPinned" class="pin-indicator">📌</span>
-        </span>
-        
-        <!-- Hoverable/Clickable Modal -->
-        <div 
-          v-if="showVariablesModal || isVariablesPinned"
-          class="variables-modal"
-          @mouseenter="showVariablesModal = true"
-          @mouseleave="handleModalMouseLeave"
-        >
-          <h3>Available Template Variables</h3>
-          <p class="modal-description">You can use these variables in your configuration rules:</p>
+      <!-- Template Variables & Actions Help - Hoverable & Clickable -->
+      <div class="help-buttons-container">
+        <!-- Template Variables -->
+        <div class="variables-help-container">
+          <span 
+            class="variables-help-trigger"
+            :class="{ pinned: isVariablesPinned }"
+            @mouseenter="handleVariablesMouseEnter"
+            @mouseleave="handleVariablesMouseLeave"
+            @click="toggleVariablesPin"
+          >
+            📋 Available Template Variables
+            <span v-if="isVariablesPinned" class="pin-indicator">📌</span>
+          </span>
           
-          <div class="variable-list">
-            <div class="variable-group">
-              <strong>User Variables:</strong>
-              <div class="variable-items">
-                <code v-pre>{{user.name}}</code>
-                <code v-pre>{{user.email}}</code>
-                <code v-pre>{{user.location}}</code>
-                <code v-pre>{{user.device}}</code>
+          <!-- Hoverable/Clickable Modal -->
+          <div 
+            v-if="showVariablesModal || isVariablesPinned"
+            class="variables-modal"
+            @mouseenter="showVariablesModal = true"
+            @mouseleave="handleVariablesModalMouseLeave"
+          >
+            <h3>Available Template Variables</h3>
+            <p class="modal-description">You can use these variables in your configuration rules:</p>
+            
+            <div class="variable-list">
+              <div class="variable-group">
+                <strong>User Variables:</strong>
+                <div class="variable-items">
+                  <code v-pre>{{user.name}}</code>
+                  <code v-pre>{{user.email}}</code>
+                  <code v-pre>{{user.location}}</code>
+                  <code v-pre>{{user.device}}</code>
+                </div>
+              </div>
+              
+              <div class="variable-group">
+                <strong>Ticket Variables:</strong>
+                <div class="variable-items">
+                  <code v-pre>{{ticket.id}}</code>
+                  <code v-pre>{{ticket.status}}</code>
+                  <code v-pre>{{ticket.priority}}</code>
+                  <code v-pre>{{ticket.category}}</code>
+                  <code v-pre>{{ticket.subject}}</code>
+                </div>
+              </div>
+              
+              <div v-if="customVariables.length > 0" class="variable-group">
+                <strong>Custom Variables (from Metadata Configuration):</strong>
+                <div class="variable-items">
+                  <code 
+                    v-for="variable in customVariables" 
+                    :key="variable"
+                    v-pre
+                  >{{ variable }}</code>
+                </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Available Actions -->
+        <div class="actions-help-container">
+          <span 
+            class="actions-help-trigger"
+            :class="{ pinned: isActionsPinned }"
+            @mouseenter="handleActionsMouseEnter"
+            @mouseleave="handleActionsMouseLeave"
+            @click="toggleActionsPin"
+          >
+            🎯 Available Actions
+            <span v-if="isActionsPinned" class="pin-indicator">📌</span>
+          </span>
+          
+          <!-- Hoverable/Clickable Modal -->
+          <div 
+            v-if="showActionsModal || isActionsPinned"
+            class="actions-modal"
+            @mouseenter="showActionsModal = true"
+            @mouseleave="handleActionsModalMouseLeave"
+          >
+            <h3>Available Chatbot Actions</h3>
+            <p class="modal-description">You can reference these actions in your configuration rules using the format: <code>{action_actionKey}</code></p>
             
-            <div class="variable-group">
-              <strong>Ticket Variables:</strong>
-              <div class="variable-items">
-                <code v-pre>{{ticket.id}}</code>
-                <code v-pre>{{ticket.status}}</code>
-                <code v-pre>{{ticket.priority}}</code>
-                <code v-pre>{{ticket.category}}</code>
-                <code v-pre>{{ticket.subject}}</code>
-              </div>
+            <div v-if="availableActions.length === 0" class="no-actions">
+              <p>No active actions configured. Go to <router-link to="/chatbot/actions">Chatbot Actions</router-link> to create actions.</p>
             </div>
             
-            <div v-if="customVariables.length > 0" class="variable-group">
-              <strong>Custom Variables (from Metadata Configuration):</strong>
-              <div class="variable-items">
-                <code 
-                  v-for="variable in customVariables" 
-                  :key="variable"
-                  v-pre
-                >{{ variable }}</code>
+            <div v-else class="actions-list">
+              <div 
+                v-for="action in availableActions" 
+                :key="action.id"
+                class="action-item"
+              >
+                <div class="action-header">
+                  <code>{action_{{ action.actionKey }}}</code>
+                  <span class="action-name">{{ action.name }}</span>
+                </div>
+                <p v-if="action.description" class="action-description">{{ action.description }}</p>
               </div>
             </div>
           </div>
@@ -224,7 +270,8 @@ const {
   updateAIRule, 
   deleteAIRule,
   getAllMetadataConnections,
-  getMetadataMappings
+  getMetadataMappings,
+  getActiveChatbotActions
 } = useBackendApi()
 
 interface AIRule {
@@ -267,6 +314,9 @@ const loading = ref(true)
 const showVariablesModal = ref(false)
 const isVariablesPinned = ref(false)
 const customVariables = ref<string[]>([])
+const showActionsModal = ref(false)
+const isActionsPinned = ref(false)
+const availableActions = ref<Array<{ id: number; name: string; actionKey: string; description?: string }>>([])
 
 const toggleVariablesPin = () => {
   isVariablesPinned.value = !isVariablesPinned.value
@@ -275,21 +325,59 @@ const toggleVariablesPin = () => {
   }
 }
 
-const handleMouseEnter = () => {
+const handleVariablesMouseEnter = () => {
   if (!isVariablesPinned.value) {
     showVariablesModal.value = true
   }
 }
 
-const handleMouseLeave = () => {
+const handleVariablesMouseLeave = () => {
   if (!isVariablesPinned.value) {
     showVariablesModal.value = false
   }
 }
 
-const handleModalMouseLeave = () => {
+const handleVariablesModalMouseLeave = () => {
   if (!isVariablesPinned.value) {
     showVariablesModal.value = false
+  }
+}
+
+const toggleActionsPin = () => {
+  isActionsPinned.value = !isActionsPinned.value
+  if (isActionsPinned.value) {
+    showActionsModal.value = true
+    loadAvailableActions()
+  }
+}
+
+const handleActionsMouseEnter = async () => {
+  if (!isActionsPinned.value) {
+    showActionsModal.value = true
+    await loadAvailableActions()
+    console.log('Loaded actions:', availableActions.value)
+  }
+}
+
+const handleActionsMouseLeave = () => {
+  if (!isActionsPinned.value) {
+    showActionsModal.value = false
+  }
+}
+
+const handleActionsModalMouseLeave = () => {
+  if (!isActionsPinned.value) {
+    showActionsModal.value = false
+  }
+}
+
+const loadAvailableActions = async () => {
+  try {
+    const response = await getActiveChatbotActions()
+    availableActions.value = response.data || []
+  } catch (error) {
+    console.error('Failed to load available actions:', error)
+    availableActions.value = []
   }
 }
 
@@ -459,22 +547,34 @@ const loadCustomVariables = async () => {
 
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  const container = document.querySelector('.variables-help-container')
-  const modal = document.querySelector('.variables-modal')
+  const variablesContainer = document.querySelector('.variables-help-container')
+  const variablesModal = document.querySelector('.variables-modal')
+  const actionsContainer = document.querySelector('.actions-help-container')
+  const actionsModal = document.querySelector('.actions-modal')
   
   if (isVariablesPinned.value && 
-      container && 
-      !container.contains(target) && 
-      modal && 
-      !modal.contains(target)) {
+      variablesContainer && 
+      !variablesContainer.contains(target) && 
+      variablesModal && 
+      !variablesModal.contains(target)) {
     isVariablesPinned.value = false
     showVariablesModal.value = false
+  }
+  
+  if (isActionsPinned.value && 
+      actionsContainer && 
+      !actionsContainer.contains(target) && 
+      actionsModal && 
+      !actionsModal.contains(target)) {
+    isActionsPinned.value = false
+    showActionsModal.value = false
   }
 }
 
 onMounted(() => {
   loadRules()
   loadCustomVariables()
+  loadAvailableActions()
   document.addEventListener('click', handleClickOutside)
 })
 
@@ -516,12 +616,15 @@ onUnmounted(() => {
   font-size: 1rem;
 }
 
-.variables-help-container {
+.variables-help-container,
+.actions-help-container {
   position: relative;
   margin-bottom: 1rem;
+  display: inline-block;
 }
 
-.variables-help-trigger {
+.variables-help-trigger,
+.actions-help-trigger {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -536,13 +639,15 @@ onUnmounted(() => {
   user-select: none;
 }
 
-.variables-help-trigger:hover {
+.variables-help-trigger:hover,
+.actions-help-trigger:hover {
   background: #e0e0e0;
   border-color: #1976d2;
   color: #1976d2;
 }
 
-.variables-help-trigger.pinned {
+.variables-help-trigger.pinned,
+.actions-help-trigger.pinned {
   background: #e3f2fd;
   border-color: #1976d2;
   color: #1976d2;
@@ -554,7 +659,8 @@ onUnmounted(() => {
   margin-left: 0.25rem;
 }
 
-.variables-modal {
+.variables-modal,
+.actions-modal {
   position: absolute;
   top: 100%;
   left: 0;
@@ -567,6 +673,62 @@ onUnmounted(() => {
   z-index: 1000;
   min-width: 500px;
   max-width: 700px;
+}
+
+.actions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.action-item {
+  padding: 0.75rem;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.action-header code {
+  background: #fff;
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #1976d2;
+  color: #1976d2;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.action-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.action-description {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.no-actions {
+  padding: 1rem;
+  text-align: center;
+  color: #666;
+}
+
+.no-actions a {
+  color: #1976d2;
+  text-decoration: none;
+}
+
+.no-actions a:hover {
+  text-decoration: underline;
 }
 
 .variables-modal h3 {

@@ -64,11 +64,13 @@ public class InMemoryVectorStore implements VectorStore {
             }
             
             double similarity = cosineSimilarity(queryEmbedding, chunk.getEmbedding());
-            if (similarity > 0.5) { // Increased threshold to 0.5 for better relevance (was 0.3, too permissive)
+            // Increased threshold to 0.65 for much better relevance - only return highly relevant articles
+            // This prevents irrelevant articles from being returned when Knowledge Base is small
+            if (similarity > 0.65) {
                 scoredChunks.add(new AbstractMap.SimpleEntry<>(chunk, similarity));
-                System.out.println("  VectorStore: Chunk " + chunk.getId() + " (Article: " + chunk.getTitle() + ") similarity: " + String.format("%.4f", similarity) + " ✓");
+                System.out.println("  VectorStore: Chunk " + chunk.getId() + " (Article: " + chunk.getTitle() + ") similarity: " + String.format("%.4f", similarity) + " ✓ (above 0.65 threshold)");
             } else {
-                System.out.println("  VectorStore: Chunk " + chunk.getId() + " (Article: " + chunk.getTitle() + ") similarity: " + String.format("%.4f", similarity) + " ✗ (below threshold)");
+                System.out.println("  VectorStore: Chunk " + chunk.getId() + " (Article: " + chunk.getTitle() + ") similarity: " + String.format("%.4f", similarity) + " ✗ (below 0.65 threshold - not relevant enough)");
             }
         }
         
